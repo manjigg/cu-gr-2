@@ -1,0 +1,49 @@
+[   0.000] 
+[   0.000] 
+[   0.000] GLOBAL ROUTER CUGR
+[   0.000] 
+[   0.000] 
+[   0.000] lef file: /home/wanghh/h3d/cu-gr-2/benchmarks/iccad_raw/ispd19_test1/ispd19_test1.input.lef
+[   0.000] def file: /home/wanghh/h3d/cu-gr-2/benchmarks/iccad_raw/ispd19_test1/ispd19_test1.input.def
+[   0.000] output  : ../baseline/ispd19_test1/ispd19_test1.solution.guide
+[   0.000] threads : 4
+[   0.000] 
+[   0.000] parsing...
+[   0.000] - - - - - - - - - -
+[   0.105] Rsyn finished loading lef/def
+[   0.116] Finished reading lef/def
+[   0.116] MEM: cur=25.5742MB, peak=25.7969MB
+[   0.116] 
+[   0.116] design statistics
+[   0.116] - - - - - - - - - -
+[   0.116] lib DBU:             2000
+[   0.116] die region (in DBU): [x: (0, 296800), y: (0, 292000)]
+[   0.116] num of cells:        8879
+[   0.116] num of ports:        0
+[   0.116] num of nets :        3153
+[   0.116] num of special nets: 2
+[   0.116] gcell grid:          98 x 97 x 9
+[   0.116] 
+[   0.185] stage 1: pattern routing
+[   0.264] 0 / 3153 nets have overflows.
+[   0.264] 
+[   0.264] routing statistics
+[   0.264] - - - - - - - - - -
+[   0.270] wire length (metric):  601511
+[   0.270] total via count:       38499
+[   0.270] total wire overflow:   0
+[   0.270] 
+[   0.270] min resource: 0.253333
+[   0.270] bottleneck:   (1, 43, 57)
+[   0.270] 
+[   0.271] generating route guides...
+[   0.327] total area of pin access patches: 596217
+[   0.327] total area of wire segment patches: 2205
+[   0.327] 
+[   0.327] writing output...
+[   0.335] finished writing output...
+[   0.335] 
+[   0.335] Terminated.
+[   0.335] - - - - - - - - - -
+[   0.335] MEM: cur=42.8438MB, peak=52.5156MB
+[   0.335] 
