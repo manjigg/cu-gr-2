@@ -1,3 +1,8 @@
+// 文件功能：声明逻辑设计的创建、连接、查询、集合遍历和观察者管理接口。
+// 【零基础阅读】Design 的菜单包括创建对象、接上/断开引脚和按名字查询。
+// “创建实例”不等于布线，“connect”建立逻辑信号关系，也不等于生成真实金属。
+// 参数 const & 表示只读借用对象；返回对象代理能继续查询其属性。
+// 具体管理步骤在 impl/Design.h，底层集合在 data/Design.h。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// 【变量读法】data 是共享 DesignData，name 参数为名字而非文件内容；instance/net/pin 为代理。
+// create/connect 改真实集合/逻辑连接；get/all 返回已有对象/遍历范围；不是每次查都重读 LEF。
 
 // -----------------------------------------------------------------------------
 

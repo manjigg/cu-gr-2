@@ -1,3 +1,7 @@
+// 文件功能：声明过孔几何的矩形边界和所属层接口。
+// 【零基础阅读】单个过孔形状由边界和工艺层组成，整只过孔可以有多个这样的形状。
+// 取边界后加路由点位移，才得到芯片坐标上的占用矩形。
+// 这是形状读取接口，不在这里判断整条线网是否连通。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,7 @@
 #define RSYN_DATABASE_PHYSICALVIAGEOMETRY_H
 
 namespace Rsyn {
+// clsBounds 过孔局部 DBU 矩形，clsMaskNumber 光罩编号，必须结合实际过孔放置点才得全局坐标。
 
 class PhysicalViaGeometry : public Proxy<ViaGeometryData> {
 	friend class PhysicalDesign;
@@ -51,4 +56,3 @@ public:
 } // end namespace
 
 #endif /* RSYN_DATABASE_PHYSICALVIAGEOMETRY_H */
-

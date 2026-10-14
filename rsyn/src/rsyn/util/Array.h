@@ -1,4 +1,10 @@
+// 文件功能：提供二维/三维数组模板，用连续存储和线性索引管理网格型数据。
+// 【零基础阅读】二维表可放进一条连续列表，通过 row×列数+col 计算线性位置。
+// 例如 3 列表格的第 1 行第 2 列（从 0 起）在索引 5，三维同样逐层展开。
+// 模板 T 决定每格放整数/小数/对象；initialize 分配，operator() 提供二维/三维访问。
 /* Copyright 2014-2018 Rsyn
+ * 变量：clsElements 连续元素列表，clsNumCols/clsNumRows 列/行数；col/row 输入下标从 0 开始。
+ * initialize 的 numCols/numRows 为数量，value 为每格初值；computeLinearIndex 将下标压成线性位置。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

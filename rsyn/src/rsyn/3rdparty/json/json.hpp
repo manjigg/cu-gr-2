@@ -1,3 +1,8 @@
+// 文件功能：nlohmann JSON 单头文件库，实现 JSON 值、解析、序列化、迭代和类型转换。
+// Rsyn::Json 用它传递读取器与服务配置；核心分为值模型、解析器和输出/转换逻辑。
+// 【零基础阅读】JSON 值可装空值/真假/数字/文字/数组/对象，像灵活嵌套表单。
+// parser 把文字装成这些值，dump 等输出把值再变回文字，转换接口连接 C++ 类型。
+// 模板/迭代器/异常支持不同数据组合；先理解字段访问与数组，再读内部解析实现。
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++
@@ -219,6 +224,10 @@ template <
     template<typename U> class AllocatorType = std::allocator
     >
 class basic_json
+// 【核心成员变量】m_type 为 JSON 值类别；m_value 为共用存储，类别决定哪个成员有效。
+// m_value.object/array/string 是容器/文字地址；boolean/number_integer/unsigned/float 是标量。
+// other 是拷贝/移动来源；first/last 是范围迭代器；cnt 是重复数量；alloc 管分配释放。
+// m_object 为迭代器关联 JSON 对象，m_it 为对应类别的迭代位置，不能跨不同对象混用。
 {
   private:
     /// workaround type for MSVC

@@ -1,4 +1,9 @@
+// 文件功能：提供 Rsyn 对象集合及迭代基础设施，支持按索引管理网表代理对象。
+// 【零基础阅读】对象集合管理许多同类档案，迭代器让 for 能逐个访问。
+// 下标/id 定位与指针地址不同，集合组织要保证对象身份及代理关联的约定。
+// 模板把一套集合操作用于实例/线网/引脚等不同对象，减少重复实现。
 /* Copyright 2014-2018 Rsyn
+ * 元素 id 为稳定身份，迭代器为当前访问位置，size 为对象数量；这三种整数不可混作几何坐标。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -395,4 +400,3 @@ public:
 } // end namespace
 
 #endif
-

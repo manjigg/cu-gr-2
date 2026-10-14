@@ -1,3 +1,8 @@
+// 文件功能：实现网表对象创建、引脚连接/断开、设计查询和变更通知等设计操作。
+// 【零基础阅读】此文件实际管理网表：创建实例/线网、维护索引、建立或解除连接。
+// 修改底层数据后还可能通知观察者，让物理等服务同步关联状态。
+// “连接引脚”是把端点加入逻辑线网，不是在芯片上画导线。
+// 顺着某个 create/connect 方法读：输入对象 -> 更新集合/字段 -> 关联维护 -> 返回结果。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +20,9 @@
 #include "utils/robin_hood.h"
  
 namespace Rsyn {
+// name 文字钥匙，data 含 instances/pins/nets/库集合与各 Mapping 字典；observer 当前响应者。
+// 新对象先登记集合/名称，连接修改同步端点归属，最后按事件通知依赖服务。
+// 匿名编号是生成名字的计数器，不可解释为 DBU 坐标或信号延迟。
 	
 inline
 Design::Design(const std::string &name) {

@@ -1,3 +1,7 @@
+// 文件功能：保存 GCELLGRID 的方向、起始位置、数量和步长。
+// 【零基础阅读】一条 GCELLGRID 记录用“起点+数量+步长”定义一组重复网格边界。
+// 起点 0、步长 100、数量 4 可表达 0/100/200/300，间隔形成格子。
+// 方向说明这组边界怎样排列；CUGR 将这些记录展开成 x/y 边界列表。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +21,8 @@
 #define PHYSICALGCELLDATA_H
 
 namespace Rsyn {
+// clsDirection 网格线方向，clsLocation 首线 DBU 位置，clsNumTracks 重复数，clsStep DBU 步长。
+// 第 i 条位置=clsLocation+i*clsStep，i 为序号；此处无实时 capacity/demand。
 
 class PhysicalGCellData {
 	friend class PhysicalDesign;
@@ -37,4 +43,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALGCELLDATA_H */
-

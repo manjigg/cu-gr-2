@@ -1,3 +1,8 @@
+// 文件功能：实现 Arc 查询方法，从底层数据返回端点、所属对象和弧名称。
+// 【零基础阅读】这里实现上层菜单：从 data 或端点引脚取得弧类型/归属/名称。
+// data->type 是通过底层地址访问字段；返回代理不意味着重新创建物理对象。
+// 按弧类别返回 Net 或 Instance，不适用的归属可返回空代理。
+// inline 允许这份方法定义被头文件引入多个编译单元，不保证机器码一定被展开。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// 【逻辑】先按 data->type 区分单元/网弧，再从 libraryArcData/netData 或 from/to 取所属对象。
+// data 是地址，返回值是代理/文字；没有适用归属时为空，不是在此创建端点或导线。
 
 inline
 Design 

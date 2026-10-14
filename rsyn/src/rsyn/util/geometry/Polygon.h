@@ -1,4 +1,9 @@
+// 文件功能：声明多边形的顶点集合、几何查询与形状操作接口。
+// 【零基础阅读】多边形用按顺序排列的顶点表达边界，不必是单个矩形。
+// 添加顶点、查询边界和几何运算接口说明“怎样表示形状”，不负责连接信号引脚。
+// 此处主要是方法声明，实际构造/运算代码在 Polygon.cpp。
 /* Copyright 2014-2018 Rsyn
+ * 顶点列表顺序决定相邻边，编号定位列表项，包围盒仅为范围摘要；不保证盒内全部属于多边形。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -175,4 +180,3 @@ private:
 } // end namespace
 
 #endif
-

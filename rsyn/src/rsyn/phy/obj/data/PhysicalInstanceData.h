@@ -1,3 +1,7 @@
+// 文件功能：保存物理实例的位置、朝向、边界及逻辑/库关联。
+// 【零基础阅读】实际实例既有逻辑身份，也有放置位置/朝向和占用边界。
+// 物理记录与逻辑实例关联，库关联说明实例使用哪种尺寸与形状模板。
+// 朝向改变引脚几何，所以不能只把原库形状平移就当成所有实例的实际形状。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +33,8 @@
 #ifndef PHYSICALDESIGN_PHYSICALINSTANCEDATA_H
 #define PHYSICALDESIGN_PHYSICALINSTANCEDATA_H
 namespace Rsyn {
+// clsBlock 大块标志，clsPlaced 已放置，clsPort 端口，clsHasLayerBounds 层定义边界。
+// clsInitialPos 初始 DBU 放置点，clsPortLayer 端口层，clsInstance 对应逻辑实例；初始点非当前更新点。
 
 class PhysicalInstanceData {
 	friend class PhysicalDesign;
@@ -54,4 +60,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALINSTANCEDATA_H */
-

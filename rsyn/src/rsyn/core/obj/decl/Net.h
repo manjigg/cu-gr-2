@@ -1,3 +1,8 @@
+// 文件功能：声明线网的驱动/负载引脚、用途、名称和连接查询接口。
+// 【零基础阅读】通过 Net 能问名字、用途、接了哪些引脚以及哪个引脚驱动信号。
+// POWER/GROUND 等用途是逻辑分类，CUGR 用它筛掉普通信号路由之外的线网。
+// allPins 提供引脚遍历，连接端点名单只是路由的输入，还不是物理结果。
+// 这里只声明接口，impl/Net.h 读取 data/Net.h 的底层字段。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 NetData；pins 全体端点，driver 驱动端，netUse 用途，numPinsOfType 分类计数。
+// 没有驱动的查询可能给空代理，不能拿它当有效引脚继续无条件查询。
 
 //! @brief A proxy class representing a netlist net.
 class Net : public Proxy<NetData> {

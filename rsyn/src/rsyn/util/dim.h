@@ -1,4 +1,9 @@
+// 文件功能：定义 X/Y 维度和按维度索引的二维数据基础类型。
+// 【零基础阅读】Dimension 用 X/Y 命名两个轴，二维结构可按 [X]/[Y] 下标访问。
+// 类比两栏表：一个位置有横坐标和纵坐标，访问轴编号不等于访问某个格子。
+// 公共二维模板被 DBU/float/double 坐标复用，字段数相同但数值类型可不同。
 /* Copyright 2014-2018 Rsyn
+ * dimension/d 为轴选择 X/Y，二维成员 x/y 为该类型的两项；索引访问不改变坐标参照系。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,4 +63,3 @@ enum Boundary {
 #define for_each_boundary(variable) for ( int variable = 0; variable < 2; variable++ )
 
 #endif /* DIM_H */
-

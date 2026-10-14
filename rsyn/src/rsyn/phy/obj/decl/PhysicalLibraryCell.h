@@ -1,3 +1,7 @@
+// 文件功能：声明库单元尺寸、macro、引脚与障碍集合接口。
+// 【零基础阅读】查询一种零件型号的尺寸、引脚、障碍及 LEF macro。
+// 它还没有特定实例的位置，取形状后要结合实例朝向/位移才能落到芯片上。
+// allObstacles 等方法提供集合范围，调用者 for 遍历才逐个处理形状。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALLIBRARYCELL_H
 
 namespace Rsyn {
+// clsSize 型号 DBU 尺寸，clsMacroSite 座位，clsObs 局部障碍，clsLayerBoundIndex 定边界的层号。
 
 class PhysicalLibraryCell : public Proxy<PhysicalLibraryCellData> {
 	friend class PhysicalDesign;
@@ -101,4 +106,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALLIBRARYCELL_H */
-

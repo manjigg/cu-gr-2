@@ -1,3 +1,7 @@
+// 文件功能：声明物理布线网格的层和轨道属性接口。
+// 【零基础阅读】查询 Rsyn 的物理网格/轨道组织，便于按工艺层访问空间资料。
+// 不要与 CUGR GridGraph 的 capacity/demand 账本混用，两者职责不同。
+// 本文件是访问菜单，具体读取底层记录的方法在 impl 同名文件。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,7 @@
 #define RSYN_PHYSICAL_ROUTING_GRID_H
 
 namespace Rsyn {
+// clsTracks 轨道组，clsSpacing.x/y DBU 轨距，clsNumTracks[轴] 数量，clsLayer 所属金属层。
 
 class PhysicalRoutingGrid : public Proxy<PhysicalRoutingGridData> {
 	friend class PhysicalDesign;
@@ -81,4 +86,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALROUTINGGRID_H */
-

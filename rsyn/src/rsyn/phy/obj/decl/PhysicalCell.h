@@ -1,3 +1,7 @@
+// 文件功能：声明物理单元位置、朝向、库关联和几何变换接口。
+// 【零基础阅读】从逻辑单元关联到这个代理，才能查询其位置、朝向和形状变换。
+// 库几何在局部坐标里，getTransform 一类接口说明怎样转到实例的放置姿态。
+// 这里的声明是操作菜单，实际返回值来自物理实例/库数据，不在此选路径。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALCELL_H
 
 namespace Rsyn {
+// data 实例物理记录；position 是 DBU 放置点，orientation 旋转/镜像，bounds 左下/右上范围。
+// getTransform 返回把库形状转到实例姿态的变换，不是信号输入/输出变换。
 
 class PhysicalCell : public PhysicalInstance {
 	friend class PhysicalDesign;
@@ -97,4 +103,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALCELL_H */
-

@@ -1,4 +1,9 @@
+// 文件功能：提供旧版布局输入流程的内部描述数据，支持 PopulateRsyn 的兼容导入接口。
+// 【零基础阅读】旧布局导入接口需要临时记录表示单元/网络/位置等资料。
+// 本文件提供这些描述类型，正式逻辑对象由 PopulateRsyn 的兼容流程创建。
+// 数据结构支持多种历史输入，不等于当前 main 会依次执行所有旧格式解析。
 /* Copyright 2014-2018 Rsyn
+ * 名字/连接/位置字段属于旧格式临时记录，编号定位记录列表，几何值需按该格式单位解释。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -263,4 +268,3 @@ struct DefStruct1 {
 } // end namespace
 
 #endif
-

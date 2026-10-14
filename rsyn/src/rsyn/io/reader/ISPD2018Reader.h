@@ -1,4 +1,9 @@
+// 文件功能：声明 ISPD 设计读取流程，管理 LEF/DEF/guide 文件及对应描述对象。
+// 【零基础阅读】本读取器保存输入路径和临时描述，组织 LEF -> DEF -> 数据库填充顺序。
+// load 是外部入口，parse* 专门处理对应格式，populateDesign 建正式逻辑/物理对象。
+// 类型名带 2018，但当前 CUGR 也借此读取所支持算例的 LEF/DEF。
 /* Copyright 2014-2018 Rsyn
+ * lefFile/defFile/guideFile 为路径成员；lefDescriptor/defDescriptor 是中间描述，不是磁盘文件内容字符串。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,4 +52,3 @@ private:
 }
 
 #endif /* ISPD2018READER_H */
-

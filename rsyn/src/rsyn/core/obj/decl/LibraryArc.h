@@ -1,3 +1,8 @@
+// 文件功能：声明库弧代理的起终库引脚和所属库单元查询接口。
+// 【零基础阅读】通过 LibraryArc 可查库内逻辑关联的两端库引脚及所属型号。
+// 它描述模板上的关系，未携带某个实例的放置位置或实际导线路径。
+// Proxy<LibraryArcData> 可理解为一把访问库弧档案的钥匙。
+// 这里主要声明接口，具体从档案取哪个字段请看 impl/LibraryArc.h。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 LibraryArcData；index 型号内弧下标，lcell 型号，from/to 起终库引脚。
+// 输入/输出均属型号逻辑层，不携带某实例的放置 DBU 位置。
 
 //! @brief A proxy class representing a library arc.
 class LibraryArc : public Proxy<LibraryArcData> {

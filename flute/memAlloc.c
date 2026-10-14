@@ -1,3 +1,8 @@
+// 文件功能：实现可指定索引上下界的向量、矩阵及三维数组分配/释放和数值比较函数。
+// 偏移后的指针必须用对应 free_* 函数释放，以恢复实际分配地址。
+// 【零基础阅读】malloc 分配字节后组织向量/矩阵指针，使调用者能用约定上下界访问。
+// 释放做相反的指针偏移恢复，不能把偏移过的地址直接随意 free。
+// runtimeError 处理分配失败，比较函数供排序数值使用，本模块不决定路由拓扑。
 /* --------------------------------------------------------------------------
    Public domain memory allocation and de-allocation routines.
    Taken from Appendix B of: 
@@ -9,6 +14,8 @@
 #include <stdlib.h>
 
 #include "memAlloc.h"
+// nl/nh 等参数规定允许数组下标；nrow/ncol 等中间量由上下界差+1 求数量。
+// malloc 返回真实内存块，偏移后的返回指针支持约定下标；free_* 做相反偏移。
 
 #define MEM_END 1
 #define FREE_ARG char*

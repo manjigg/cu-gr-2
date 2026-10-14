@@ -1,3 +1,7 @@
+// 文件功能：保存特殊线网的 DEF 描述和特殊导线数据。
+// 【零基础阅读】特殊线网常用于电源等已有布线，保存 DEF 导线/过孔描述。
+// CUGR 不把这些几何当普通信号重新规划，而将其视为固定占用障碍。
+// 数据保留路径详情，查询后需转换成各层矩形才能影响容量估计。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALSPECIALNETDATA_H
 
 namespace Rsyn {
+// 特殊网描述保留导线和路径点记录：网名为文字身份，层名查工艺层，线宽/坐标为 DBU 几何。
+// 查询后的 wire/segment/point 分别定位路径、段和点，不能与普通 Net 的端点编号表混用。
 class PhysicalSpecialNetData : public PhysicalObject {
 public:
 	DefNetDscp clsNet;
@@ -40,4 +46,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPECIALNETDATA_H */
-

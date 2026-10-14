@@ -1,3 +1,7 @@
+// 文件功能：声明路径点的坐标、过孔和延伸量接口。
+// 【零基础阅读】路径点可带延伸、过孔或矩形属性，不仅仅是 x/y。
+// has* 方法判断可选字段是否提供，get* 再取得相应值。
+// 相邻点与路径属性一起表达金属几何，本接口不做新的路径搜索。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALROUTINGPOINT_H
 
 namespace Rsyn {
+// clsPos DBU 点，clsVia 过孔，clsExtension 延伸量，clsRectangle 可选形状，clsHas* 检其是否提供。
 
 class PhysicalRoutingPoint : public Proxy<PhysicalRoutingPointData> {
 	friend class PhysicalDesign;
@@ -90,4 +95,3 @@ private:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALROUTINGPOINT_H */
-

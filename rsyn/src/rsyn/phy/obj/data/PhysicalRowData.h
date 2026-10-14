@@ -1,3 +1,7 @@
+// 文件功能：保存放置行的位置、朝向、site 和重复排列参数。
+// 【零基础阅读】Row 是标准单元可排放的一行，位置和重复参数决定排列范围。
+// site 像放置的基本座位模板，朝向影响放在这一行的单元姿态。
+// 放置行与金属轨道不是同一种“线”：前者放零件，后者约束导线中心。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,8 @@
 
 
 namespace Rsyn {
+// clsBounds 行 DBU 边界，clsPhysicalSite 座位模板，clsSiteOrientation 几何姿态。
+// clsOrigin 首座 DBU 点，clsNumSites[轴] 重复数，clsStep DBU 步长，clsRowName 行文字名。
 
 class PhysicalRowData : public PhysicalObject {
 public:
@@ -62,4 +68,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALROWDATA_H */
-

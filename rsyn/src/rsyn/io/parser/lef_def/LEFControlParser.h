@@ -1,4 +1,9 @@
+// 文件功能：声明 LEF 回调适配器，将工艺层和库单元解析结果整理成 LefDscp。
+// 【零基础阅读】LEF 控制解析器把工艺层/库单元/引脚等事件转成库描述。
+// 注册函数说明谁处理哪类对象，读取入口触发底层 liblef 的实际语法解析。
+// 本文件先看 parseLEF 声明，再到 .cpp 追注册和各回调的字段转换。
 /* Copyright 2014-2018 Rsyn
+ * 输入 lefi* 为刚解析的层/模板，LefDscp 接收结果；文件名是路径而非模板名。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,4 +38,3 @@ public:
 }; // end class
 
 #endif /* LEFCONTROLPARSER_H */
-

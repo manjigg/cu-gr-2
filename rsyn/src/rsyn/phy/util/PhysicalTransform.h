@@ -1,4 +1,9 @@
+// 文件功能：声明旋转/镜像等物理朝向变换的点和矩形转换接口。
+// 【零基础阅读】坐标变换像把零件图旋转/翻面，再放到实际位置。
+// 点和矩形都有转换接口，矩形需要保证转换后上下界仍按大小组织。
+// 本文件声明朝向/边界与变换方法，具体计算在 .cpp。
 /* Copyright 2014-2018 Rsyn
+ * bounds 为变换参照 DBU 边界，orientation 为几何姿态，point/矩形参数为待转换形状。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,4 +110,3 @@ private:
 } // end namespace
 
 #endif /* TRANSFORMATION_H */
-

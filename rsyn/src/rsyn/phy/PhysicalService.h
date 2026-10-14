@@ -1,3 +1,7 @@
+// 文件功能：声明物理设计服务，向 Session 暴露 PhysicalDesign。
+// 【零基础阅读】服务像共享柜台，Session 通过名字找到它，取得其 PhysicalDesign。
+// start/stop 约定生命周期，观察者接口让逻辑变更能同步到物理资料。
+// 这是服务接口，不能因为创建一个代理就认为 LEF/DEF 已经加载完。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
 #include <Rsyn/PhysicalDesign>
 
 namespace Rsyn {
+// session 提供共享逻辑设计，physicalDesign 关联物理资料，params 为功能开关 JSON，不是 LEF 正文。
 
 class PhysicalService : public Rsyn::Service, public DesignObserver {
 private:

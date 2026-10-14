@@ -1,3 +1,7 @@
+// 文件功能：声明特殊线网 DEF 描述和特殊导线集合接口。
+// 【零基础阅读】特殊线网接口提供 DEF 原描述和已有特殊导线集合。
+// CUGR 按其路径点/过孔提取固定金属障碍，不把它当普通信号网重布。
+// getNet 此处的返回含义应看声明，不能仅按名字猜成逻辑 Net 代理。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +33,8 @@
 #ifndef PHYSICALDESIGN_PHYSICALSPECIALNET_H
 #define PHYSICALDESIGN_PHYSICALSPECIALNET_H
 
-namespace Rsyn { 
+namespace Rsyn {
+// net 描述保留原 DEF 名称/导线资料；wire/segment/point 遍历路径层级，不是普通信号接入点表。
 
 class PhysicalSpecialNet : public Proxy<PhysicalSpecialNetData> {
 	friend class PhysicalDesign;
@@ -55,4 +60,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPECIALNET_H */
-

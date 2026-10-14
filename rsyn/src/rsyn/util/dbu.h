@@ -1,4 +1,9 @@
+// 文件功能：定义整数数据库长度单位 DBU 及二维 DBUxy 坐标，供物理几何存储。
+// 【零基础阅读】DBU 是整数物理长度单位；DBUxy 把 x/y 两个整数装成二维位置。
+// 若每微米 2000 DBU，坐标 1000 代表 0.5 微米，不代表第 1000 个网格。
+// typedef/using 是类型命名，坐标算术仍需注意单位和可能的整数取整。
 /* Copyright 2014-2018 Rsyn
+ * DBUxy.x/y 是两个 DBU 坐标；算术 rhs 为另一个点/向量；类型本身不把编号自动转长度。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -229,4 +234,3 @@ roundedUpIntegralDivision(const T numerator, const T denominator) {
 #undef MAKE_FUNCTION_2
 
 #endif
-

@@ -1,4 +1,9 @@
+// 文件功能：实现矩形几何对象的构造和边界/尺寸操作。
+// 【零基础阅读】把传入的矩形参数组织成存储并实现边界/尺寸访问。
+// 位置改变与尺寸改变是不同操作，理解方法时先看它更新哪些量。
+// 这是已有形状的表达，不进行拥塞代价计算或新增线网连接。
 /* Copyright 2014-2018 Rsyn
+ * 构造参数装成矩形位置/尺寸，平移改位置不改跨度，边界查询由位置与宽高组合取得。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

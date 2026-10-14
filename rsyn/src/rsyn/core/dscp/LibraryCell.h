@@ -1,4 +1,9 @@
+// 文件功能：定义逻辑库单元的描述对象，供导入流程组织引脚和库弧后创建数据库对象。
+// 【零基础阅读】描述对象是先装库单元字段的临时表格，还不是最终数据库代理。
+// 导入时先把名字/引脚/弧组织好，再据此创建共享的库模板。
+// struct/class 字段说明保存什么，真正填资料的代码在 PopulateRsyn 等导入方法里。
 /* Copyright 2014-2018 Rsyn
+ * 型号名/模板引脚/弧描述为导入临时资料，名字待后续匹配，成员序号只在当前描述范围有效。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

@@ -1,3 +1,7 @@
+// 文件功能：声明轨道方向、数量、间距、位置和层接口。
+// 【零基础阅读】轨道组以位置、步长、数量和方向描述许多条平行线。
+// 同一组可能关联若干层；查询层集合后才能知道它适用于哪个金属层。
+// CUGR MetalLayer 选首选方向组，随后统计每个粗网格内轨道数量。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALTRACKS_H
 
 namespace Rsyn {
+// clsLocation 首轨 DBU 坐标，clsSpace DBU 轨距，clsNumTracks 数量，clsLayers 适用层集合。
 
 class PhysicalTracks : public Proxy<PhysicalTracksData> {
 	friend class PhysicalDesign;
@@ -61,4 +66,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALTRACKS_H */
-

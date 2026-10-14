@@ -1,3 +1,10 @@
+// 文件功能：声明共享会话的设计访问、Reader/Service 注册、服务查找和输入文件定位接口。
+// 多个 Session 代理访问共享状态，Design::read 从中取得 Reader 已加载的物理数据。
+// 【零基础阅读】Session 像共享前台：查设计、找文件、注册读取器、启动/找服务。
+// 创建多个 Session 代理通常仍访问共享状态，并非分别读取几份独立芯片。
+// 例如 Reader 先启动 rsyn.physical，CUGR 再按这个名字取得物理服务柜台。
+// clsSessionVariables：“名字->JSON 值”表，clsDesign/clsLibrary 共享逻辑资料。
+// clsInstallationPath 安装位置，clsPaths 搜索目录；name 服务/读取器名字，params 启动配置。
     /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");

@@ -1,3 +1,7 @@
+// 文件功能：声明按工艺层管理及查询过孔的接口。
+// 【零基础阅读】这是按层查过孔的菜单，用于避免每次从所有过孔中逐个寻找。
+// 返回结果说明哪些过孔与层有关，不等于算法已经决定用哪一只。
+// 数据柜在 data/LayerViaManagerData.h，取数据的方法在 impl 同名文件。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,7 @@
 #define LAYERVIAMANAGER_H
 
 namespace Rsyn {
+// data 底层管理记录，clsVias/clsBottomVias/clsTopVias 按层键查过孔列表，layer 是层代理。
 
 class LayerViaManager : public Proxy<LayerViaManagerData> {
 	friend class PhysicalDesign;
@@ -56,4 +61,3 @@ public:
 } // end namespace 
 
 #endif /* LAYERVIAMANAGER_H */
-

@@ -1,4 +1,9 @@
+// 文件功能：声明物理类型、方向、朝向与名称的辅助转换接口。
+// 【零基础阅读】这里声明文字和物理枚举/名称之间的转换助手。
+// 输入格式使用字符串，内部处理使用类别编号，输出日志/文件又需转回文字。
+// 函数声明在此，PhysicalLayerUtil.cpp 提供具体 if/switch 转换规则。
 /* Copyright 2014-2018 Rsyn
+ * type/direction/orientation 字符串或枚举为转换输入；返回值只解释类别，无额外资源图成员。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,4 +228,3 @@ inline std::ostream& operator<<(std::ostream& out, const Rsyn::PhysicalTrackDire
 } // end namespace
 
 #endif /* PHYSICALDESIGN_PHYSICALUTIL_H */
-

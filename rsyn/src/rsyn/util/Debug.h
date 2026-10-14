@@ -1,4 +1,9 @@
+// 文件功能：定义 Rsyn 调试断言和错误定位辅助设施。
+// 【零基础阅读】断言检查程序内部约定，如“下标应在范围内”，便于开发时定位错误。
+// 宏可在编译设置下启用/禁用，不能把断言当成完整用户输入校验。
+// 本文件提供调试助手，调用处的条件才说明它检查哪个具体预期。
 /* Copyright 2014-2018 Rsyn
+ * 条件参数为真假表达式，消息/文件/行号供诊断；行号是源码位置，不是网格 y 坐标。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,4 +41,3 @@
 	} // end if
 
 #endif
-

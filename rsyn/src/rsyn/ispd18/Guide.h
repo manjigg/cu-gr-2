@@ -1,4 +1,9 @@
+// 文件功能：定义线网路由 guide 的分层矩形表示，供 RoutingGuide 服务保存和查询。
+// 【零基础阅读】Guide 保存线网可用的分层矩形区域，矩形表示走廊而非细线中心。
+// 同一网可有多块区域，过孔接入也可在多个层提供相同平面位置。
+// 类型组织已有区域，加载与按网查询由 RoutingGuide 服务提供。
 /* Copyright 2014-2018 Rsyn
+ * guide 区域含层与矩形；一个区域下标仅定位本网列表，不等于整个设计线网编号。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

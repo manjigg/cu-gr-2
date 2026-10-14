@@ -1,3 +1,8 @@
+// 文件功能：声明实例代理的类型转换、层次关系、位置和引脚访问接口。
+// 【零基础阅读】这里定义实例的公共查询菜单，不论它是单元、模块还是端口。
+// 先判断类型，再调用 asCell/asPort 等专门转换，才能按正确类别访问。
+// allPins 一类接口给可遍历范围，for 循环可逐个取出引脚代理。
+// get* 通常查询已有资料，set*/修改接口才会改变数据；看末尾 const 可辅助判断。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 InstanceData，pins/arcs 为成员集合，lcell 为库关联；index 是编号，name 是文字。
+// 信号方向参数限定引脚类别；几何 orientation 限定朝向，二者都是枚举但含义不同。
 
 //! @brief A proxy class representing a netlist instance (i.e. cell, port or
 //!        module).

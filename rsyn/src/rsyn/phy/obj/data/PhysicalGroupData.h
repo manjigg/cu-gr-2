@@ -1,3 +1,7 @@
+// 文件功能：保存物理分组的成员及约束关联。
+// 【零基础阅读】Group 将若干实例视为一组，常用于关联同一物理约束。
+// 成员描述“有哪些对象”，区域关联描述“约束在哪里”，二者不同。
+// 本文件定义保存格式，分组查询交给 PhysicalGroup 代理。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,7 @@
 
 
 namespace Rsyn {
+// clsPatterns 是成员名匹配模式字符串表，clsRegion 关联约束区域；模式不是实际成员对象。
 
 class PhysicalGroupData : public PhysicalObject {
 public:
@@ -44,4 +49,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALGROUPDATA_H */
-

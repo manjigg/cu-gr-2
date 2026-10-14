@@ -1,4 +1,9 @@
+// 文件功能：提供字符串格式化与处理助手，减少日志和输入处理的重复代码。
+// 【零基础阅读】字符串助手将数字/文字排版或处理，减少导入与日志重复写格式代码。
+// string 是可变长文字，stringstream 可像流一样拼接再取最终字符串。
+// 转换后的文字与原数值类别不同，输出/解析方向应按具体方法区分。
 /* Copyright 2014-2018 Rsyn
+ * 输入文字/数字经字符串流格式化；width/precision 等若为格式参数，不是芯片线宽或 DBU 精度。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,4 +51,3 @@ public:
 }; // end class
 
 #endif
-

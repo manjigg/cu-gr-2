@@ -1,3 +1,8 @@
+// 文件功能：声明外部端口代理的方向、内外引脚和所属模块查询接口。
+// 【零基础阅读】Port 是模块边界的接线口，接口区分内部与外部引脚。
+// 方向描述信号进入还是离开模块；物理朝向另由 PhysicalPort 保存。
+// Proxy 句柄关联 PortData；返回的引脚还能继续查询所连的 Net。
+// 看 impl/Port.h 理解访问路径，而不是把声明列表当成连续执行代码。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 实际端口的公共实例记录；内外引脚按模块边界角色返回，不是两个物理金属层。
+// PortData 当前为空占位，因此理解 get* 要继续跟 InstanceData 而非寻找不存在的字段。
 
 //! @brief A proxy class representing a netlist port.
 class Port : public Instance {

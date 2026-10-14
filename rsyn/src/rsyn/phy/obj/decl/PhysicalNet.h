@@ -1,3 +1,7 @@
+// 文件功能：声明物理线网包围盒、引脚边界和路径接口。
+// 【零基础阅读】从物理线网可查引脚总体边界和已有路由资料。
+// 总体边界只围住端点，不能把矩形边框本身当成最终连线。
+// 逻辑 Net 回答连接名单，PhysicalNet 回答空间信息，CUGR 最终树另行保存。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +27,8 @@
 #ifndef RSYN_PHYSICAL_NET_H
 #define RSYN_PHYSICAL_NET_H
 
-namespace Rsyn { 
+namespace Rsyn {
+// clsNet 逻辑网，clsBounds 端点 DBU 包围盒，clsBoundPins[轴][低/高] 决边界引脚，clsRouting 已有路径。
 
 class PhysicalNet : public Proxy<PhysicalNetData> {
 	friend class PhysicalDesign;

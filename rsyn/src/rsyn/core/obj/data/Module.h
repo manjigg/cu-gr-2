@@ -1,3 +1,8 @@
+// 文件功能：保存模块内实例、线网和端口等层次网表数据。
+// 【零基础阅读】Module 像一间车间，里面有实例、线网和边界端口。
+// 数据容器记录车间里的对象集合，层次关系说明这个模块位于哪一级设计中。
+// “所有实例”遍历与“某个实例的所有引脚”遍历不是同一个列表。
+// 顶层 Module 是 CUGR 导入信号线网的入口，查询接口在 decl/impl/Module.h。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// 【字段】instances/nets/ports 是模块内实例/网/端口集合；portsByDirection[信号方向] 分类端口。
+// 继承的实例相关字段不在此重复声明，模块可以继续处于另一个模块的层次中。
 
 struct ModuleData {
 	Design design;

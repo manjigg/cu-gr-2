@@ -1,3 +1,7 @@
+// 文件功能：声明物理模块的空间与逻辑实例关联接口。
+// 【零基础阅读】此代理为模块提供物理空间访问，与逻辑 Module 的成员关系配合。
+// class 声明类型，Proxy 指向受管理数据，空代理不表示一个零尺寸有效模块。
+// 具体支持的查询以本菜单为准，再到 impl 同名文件看返回来源。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALMODULE_H
 
 namespace Rsyn {
+// data 为物理模块代理关联的记录地址；模块身份/成员关系与 DBU 边界分属逻辑/物理查询。
 
 class PhysicalModule : public PhysicalInstance {
 	friend class PhysicalDesign;
@@ -46,4 +51,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALMODULE_H */
-

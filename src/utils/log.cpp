@@ -1,3 +1,10 @@
+// 文件功能：实现计时日志和操作系统相关的内存统计，供导入、布线和结束阶段输出资源信息。
+// Linux 当前内存取 /proc/self/statm；峰值取 getrusage，并统一转换为 MB。
+// 【白话流程】程序开始建立一个全局计时器，每次 log 输出距起点的秒数。
+// Linux 的 statm 给出进程页面数量，乘每页字节数再除 1048576 转成 MB。
+// 峰值是“运行期间最多用过多少”，当前值是“现在用了多少”，不是同一个指标。
+// #if/#elif 由编译器选平台代码，运行时不会同时执行 Unix 和 Windows 两套。
+// ostringstream 先拼时间戳，再写到调用者的输出流，避免改它原有的数字格式。
 #include "log.h"
 
 #include <iomanip>
@@ -27,6 +34,8 @@ std::ostream& operator<<(std::ostream& os, const timer& t) {
 }
 
 double mem_use::get_current() {
+    // Linux：fp 为 /proc/self/statm 读取句柄，rss 为驻留页数，乘页字节数转 MB。
+    // Windows：info 系统进程内存结构，WorkingSetSize 为当前工作集字节数。
 #if defined(__unix__)
     long rss = 0L;
     FILE* fp = NULL;
@@ -49,6 +58,7 @@ double mem_use::get_current() {
 }
 
 double mem_use::get_peak() {
+    // rusage 为 Unix 系统资源统计；Windows info 为进程内存记录，峰值不是当前值。
 #if defined(__unix__)
     struct rusage rusage;
     getrusage(RUSAGE_SELF, &rusage);

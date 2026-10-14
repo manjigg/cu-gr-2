@@ -1,4 +1,9 @@
+// 文件功能：定义度量类型、单位前缀和单位转换，统一数值的物理量表达。
+// 【零基础阅读】单位前缀如毫/微改变同一物理量的数字尺度，转换保持真实量不变。
+// 度量类型区分长度/电容/时间等，不能只按倍率把不同物理量互相转换。
+// 类提供统一单位处理，具体输入采用哪个尺度由库/设计文件单位字段决定。
 /* Copyright 2014-2018 Rsyn
+ * measure 量类别，prefix 单位前缀，value 该尺度下数值；换算先确认同一物理量再乘倍率。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -152,4 +157,3 @@ public:
 } // end namespace
 
 #endif
-

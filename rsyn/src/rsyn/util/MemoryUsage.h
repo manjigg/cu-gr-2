@@ -1,4 +1,9 @@
+// 文件功能：读取进程内存使用信息，供性能统计和诊断输出。
+// 【零基础阅读】系统查询告诉程序目前或历史峰值用了多少内存，供性能观察。
+// 系统单位可能是页面/KB，工具换算后才适合对照日志中的 MB。
+// 查询统计不回收内存，也不控制单元或线网数量。
 /* Copyright 2014-2018 Rsyn
+ * 系统内存数值需依原单位换算（页面/KB/字节），峰值和当前值分别表示历史最高与当下占用。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,4 +46,3 @@ public:
 #endif
 
 #endif
-

@@ -1,3 +1,7 @@
+// 文件功能：声明工艺层类型、索引、宽度和底层 LEF 层查询接口。
+// 【零基础阅读】本菜单查询层的身份、类型和规则，名字如 M2 是文字而索引是数字。
+// getLayer 返回底层 LEF 层对象，CUGR 用其读取线宽、面积与间距表。
+// 区分 ROUTING 金属层和 CUT 切孔层，不能把两种对象都算作可走导线的层。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +36,8 @@
 
 
 namespace Rsyn {
+// clsIndex 全层序号，clsRelativeIndex 同类别层序号，clsType 用途，clsWidth DBU 宽度。
+// clsLower/clsUpper 层资料地址，getLayer 提供详细 LEF 层对象，非网格资源记录。
 
 class PhysicalLayer : public Proxy<PhysicalLayerData> {
 	friend class PhysicalDesign;
@@ -76,4 +82,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALLAYER_H */
-

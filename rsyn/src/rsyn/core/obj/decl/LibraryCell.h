@@ -1,3 +1,8 @@
+// 文件功能：声明库单元的名称、引脚、内部弧和属性查询接口。
+// 【零基础阅读】LibraryCell 提供对型号名称、模板引脚和模板弧的访问。
+// 模板不等于实际零件，不能仅用此代理判断某个实例放在芯片哪里。
+// 集合查询支持逐引脚/逐弧遍历，编号查询定位某一项。
+// 先读方法注释理解输入输出，再到 impl 对照 data 字段来源。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 LibraryCellData；pins/arcs 模板端点/弧，size DBU 尺寸，name 型号名。
+// index 定位单个模板成员，all* 提供成员范围；num* 返回计数而非某成员编号。
 
 //! @brief A proxy class representing a library cell.
 class LibraryCell : public Proxy<LibraryCellData> {

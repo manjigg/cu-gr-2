@@ -1,4 +1,9 @@
+// 文件功能：为逻辑网表对象集合构造范围迭代适配器，支持 all* 接口的 range-for 遍历。
+// 【零基础阅读】范围适配把网表集合包装成可写 for(auto x : range) 的形式。
+// begin/end 表示迭代起点/终点之外，迭代器推进后取得下一个对象代理。
+// 包装范围本身不执行全体对象的处理，调用方循环中的语句才实际工作。
 /* Copyright 2014-2018 Rsyn
+ * 遍历范围包装底层集合，begin/end 为首/尾后位置，当前元素是代理而非完整数据拷贝。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -173,4 +178,3 @@ public:
 }; // end class
 
 #endif
-

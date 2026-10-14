@@ -1,1 +1,6 @@
+// 文件功能：为 <Rsyn/PhysicalDesignObserver> 导出物理设计观察者头文件。
+// 【零基础阅读】转发物理变更观察者接口，如位置变化时提醒依赖服务刷新数据。
+// 真正接口在 PhysicalObserver.h，此短入口只是方便写统一 include 名字。
+// 找实现要跟着派生观察者，而不是在本文件寻找路由循环。
 #include "rsyn/phy/infra/PhysicalObserver.h"
+// 本入口无运行变量；被转发接口的参数为发生变更的物理对象，不是新路线指令。

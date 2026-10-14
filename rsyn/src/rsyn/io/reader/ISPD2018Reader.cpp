@@ -1,4 +1,11 @@
+// 文件功能：定位并解析 LEF/DEF，填充逻辑网表，启动物理服务并加载物理库/设计。
+// 当前 parsingFlow 未调用 guide 读取，是 CUGR Design::read 使用的输入入口。
+// 【零基础阅读】load 先从 JSON 找路径；parsingFlow 调库解析，再把结果填进共享设计。
+// 逻辑网表建立后启动物理服务，加载库几何与布局，让逻辑引脚关联到物理形状。
+// parseGuideFile 有定义，但当前 parsingFlow 的调用被注释，主输入不要求已有 guide。
 /* Copyright 2014-2018 Rsyn
+ * params 输入 JSON，path 搜索目录，session 共享入口；lefParser/defParser 分别识别两种格式。
+ * physicalDesignConfiguration 控制加载行为，physicalDesign 物理代理，design 逻辑代理。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +60,7 @@ bool ISPD2018Reader::load(const Rsyn::Json& params) {
 // -----------------------------------------------------------------------------
 
 void ISPD2018Reader::parsingFlow() {
+	// 先解析成中间描述，再创建逻辑对象及对应物理属性。
 	parseLEFFile();
 	parseDEFFile();
 	populateDesign();
@@ -85,6 +93,7 @@ void ISPD2018Reader::parseGuideFile() {
 } // end method
 
 void ISPD2018Reader::populateDesign() {
+	// 逻辑网表先建立，物理服务随后把库几何和实例布局挂到这些对象上。
 	Rsyn::Design design = session.getDesign();
 
 	Reader::populateRsyn(lefDescriptor, defDescriptor, design);

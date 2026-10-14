@@ -1,3 +1,7 @@
+// 文件功能：实现工艺层索引、名称、类型、宽度与 LEF 层读取。
+// 【零基础阅读】从工艺层记录读取名字、类型、索引和底层 LEF 规则对象。
+// 相对索引服务特定层类别，不能只凭总体序号猜数组下标。
+// CUGR MetalLayer 查询后复制所需规则，此处只是现有资料的访问桥梁。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// getIndex/RelativeIndex 读取不同编号范围；clsLower/Upper 是地址，clsWidth 是 DBU，clsType 是层用途。
 
 inline lefiLayer* PhysicalLayer::getLayer() const {
 	return data->clsLayer;

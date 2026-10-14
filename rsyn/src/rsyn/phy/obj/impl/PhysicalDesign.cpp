@@ -1,3 +1,9 @@
+// 文件功能：将 LEF/DEF 描述加载成工艺层、单元、引脚、轨道和过孔等物理对象。
+// 同时维护实例位置、线网边界和变更，是物理设计的主要构建入口。
+// 【零基础阅读】这是物理数据库的装配工厂，把解析器的描述记录变成可查询对象。
+// 工艺/库先加载，设计实例后加载，才能把单元名、层名和过孔名正确关联起来。
+// 更新实例位置还要更新相关边界/观察者，使依赖服务不继续使用旧几何。
+// 先按 loadLibrary/loadDesign 等入口读，再追每一种 load/add/update 辅助方法。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +28,9 @@
 #include <Rsyn/PhysicalDesign>
 
 namespace Rsyn {
+// 【读取变量范围】lef/def 描述来自解析器，逻辑 cell/pin/net 为 Attribute 的键，phy* 为关联物理对象。
+// name 是文字查找键，index 是对应集合下标，position/size/spacing 等 DBU 几何要按长度/面积区分。
+// 加载先创建工艺/库对象再建实例关联；位置更新再刷新网边界/统计并通知观察者。
 
 // -----------------------------------------------------------------------------
 

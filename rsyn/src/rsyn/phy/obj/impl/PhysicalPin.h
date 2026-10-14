@@ -1,3 +1,7 @@
+// 文件功能：实现实例物理引脚的位置与几何属性读取。
+// 【零基础阅读】读取实际引脚的物理位置/关联，而不是给它寻找新路径。
+// 若方法返回参考位置，还需结合模板形状理解实际金属覆盖范围。
+// 返回 const 引用避免复制，调用方只读借用时应保留原设计对象的寿命。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// clsDisplacement 相对 DBU 位移，clsLayerBound 摘要边界，clsPhysicalPinGeometries 组集合。
 
 inline DBUxy PhysicalPin::getDisplacement() const {
 	return data->clsDisplacement;
@@ -82,4 +87,4 @@ inline const Bounds & PhysicalPin::getLayerBounds() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

@@ -1,3 +1,7 @@
+// 文件功能：声明工艺间距条目的规则参数接口。
+// 【零基础阅读】间距接口描述工艺要求留多少空间，而不是两条线实际已经隔多远。
+// 应结合所属层与适用条件读每个查询的返回值。
+// 字段在 data，访问在 impl，具体如何影响路由需追调用此接口的算法。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSPACING_H
 
 namespace Rsyn {
+// clsLayer1/clsLayer2 相关层，clsDistance 要求的 DBU 间距；与真实几何测量距离分开。
 
 class PhysicalSpacing : public Proxy<PhysicalSpacingData> {
 	friend class PhysicalDesign;
@@ -54,4 +59,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPACING_H */
-

@@ -1,3 +1,8 @@
+// 文件功能：声明库模块代理，提供模块库对象的访问接口。
+// 【零基础阅读】本文件是库模块代理的接口层，将底层资料包装成可用对象。
+// class 定义类型，构造函数定义怎样把已有数据关联到代理。
+// 名字里的 Library 指可复用模板，与实际模块实例的层次成员要区分。
+// data 同名文件存资料，impl 同名文件提供具体访问实现。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 LibraryModuleData，design 是它关联的设计代理；空代理不表示自动创建的新设计。
+// 模块模板信息沿设计关联查，不应假设此占位类型另存一份完整成员表。
 
 //! @brief A proxy class representing a library module
 //! @note  This is not used yet.

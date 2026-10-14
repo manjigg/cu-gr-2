@@ -1,4 +1,10 @@
+// 文件功能：把库/设计描述转成 Rsyn 逻辑对象，创建实例及引脚并建立线网连接。
+// 【零基础阅读】先建立库模板与引脚，再建实际实例/端口，最后依名单连接线网。
+// 连接是更新逻辑关系，不是在芯片几何上画好金属；物理库/布局由另一步加载。
+// 追每个 populate 方法时按“取描述 -> 找/建对象 -> 设置字段 -> 建关联”理解。
 /* Copyright 2014-2018 Rsyn
+ * name 为关联查找键，cell/net/pin 为正式代理；临时描述与数据库身份属于不同层次。
+ * “创建对象”和“把端点连接到网”分步更新列表/关联，未在此产生真实金属导线路径。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -469,4 +475,3 @@ void PopulateRsyn::populateRsyn(
 // -----------------------------------------------------------------------------
 
 } // end namespace 
-

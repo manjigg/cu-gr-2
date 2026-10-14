@@ -1,3 +1,7 @@
+// 文件功能：声明引脚几何组的层集合和几何属性接口。
+// 【零基础阅读】一个引脚形状组包含若干层对象，每层对象还有自己的形状集合。
+// 遍历顺序是 geometry -> pin layer -> bounds，三层不是三个实际引脚。
+// 该接口提供集合查询，不决定最终从哪个格子接入这个引脚。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALPINGEOMETRY_H
 
 namespace Rsyn {
+// clsPinPortClass 组类别，clsPinLayers[i] 第 i 个层形状；此 i 不是工艺层全局编号。
 
 class PhysicalPinGeometry : public Proxy<PhysicalPinGeometryData> {
 	friend class PhysicalDesign;
@@ -68,4 +73,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALPINGEOMETRY_H */
-

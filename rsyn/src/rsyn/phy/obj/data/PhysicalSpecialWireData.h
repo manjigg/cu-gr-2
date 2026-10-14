@@ -1,3 +1,7 @@
+// 文件功能：保存特殊导线的层、路径与几何属性。
+// 【零基础阅读】SpecialWire 是特殊线网里的一段导线路径资料。
+// 层、路径点、线宽/扩展等决定占用范围，不能只用两点连成零宽线。
+// 此处保存已有结果，后续导入器读取它，不代表这里重新布特殊线网。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSPECIALWIREDATA_H
 
 namespace Rsyn {
+// clsPhysicalLayer 所属层，clsWireWidth DBU 线宽，clsRoutingPoints 按连接顺序的路径点。
 
 class PhysicalSpecialWireData : public PhysicalObject {
 public:
@@ -42,4 +47,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPECIALWIREDATA_H */
-

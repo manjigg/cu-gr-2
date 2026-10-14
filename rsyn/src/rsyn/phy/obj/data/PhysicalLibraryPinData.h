@@ -1,3 +1,7 @@
+// 文件功能：保存库引脚的几何集合和逻辑库引脚关联。
+// 【零基础阅读】一个库引脚可由多个形状组成，可能跨层，所以需要几何集合。
+// 这些形状在模板坐标中，实例查询时还需处理朝向与放置位移。
+// 逻辑关联提供引脚身份，物理集合提供金属在哪里，二者配合才能生成接入点。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALLIBRARYPINDATA_H
 
 namespace Rsyn {
+// clsLayerBound 指定层 DBU 边界，clsLibraryCell 所属型号，clsUse 用途，clsDirection 信号方向。
+// clsPhysicalPinGeometries[i] 第 i 组形状，组内再分层；i 不表示第 i 个独立引脚。
 
 class PhysicalLibraryPinData {
 public:
@@ -47,4 +53,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALLIBRARYPINDATA_H */
-

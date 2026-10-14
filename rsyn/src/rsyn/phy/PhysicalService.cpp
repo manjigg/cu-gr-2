@@ -1,3 +1,7 @@
+// 文件功能：实现物理服务启动/停止及逻辑设计变更响应。
+// 【零基础阅读】启动服务时初始化物理设计，随后响应逻辑对象创建/变更等通知。
+// 观察者回调像“资料发生变化就提醒柜台”，避免物理关联继续指向过期资料。
+// 输入 Reader 启动此服务后再加载库/设计，CUGR 才能从 Session 查询物理数据。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +21,7 @@
 #include "rsyn/phy/PhysicalService.h"
 
 namespace Rsyn {
+// 事件输入 cell/instance 为当前变动对象，服务通过逻辑代理查物理属性，再同步创建/删除/位置资料。
 
 void PhysicalService::start(const Rsyn::Json &params) {
 	Rsyn::Session session;

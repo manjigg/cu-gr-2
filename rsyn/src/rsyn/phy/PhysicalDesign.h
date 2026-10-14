@@ -1,4 +1,9 @@
+// 文件功能：聚合物理对象数据、声明和实现，提供 PhysicalDesign 统一入口。
+// 【零基础阅读】这个头文件像总装目录，把物理类型、资料、接口与内联实现按顺序引入。
+// 順序重要：先认识类型/声明，再使用完整数据和方法，避免循环依赖。
+// 想看加载过程进入 obj/impl/PhysicalDesign.cpp，想查某个对象看该对象的三层文件。
 /* Copyright 2014-2018 Rsyn
+ * 本文件聚合对象三层定义，没有额外的一套运行字段；变量入口是 obj/data/PhysicalDesign.h。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -225,4 +230,3 @@ class PhysicalRouting;
 #include "rsyn/phy/obj/impl/PhysicalDesign.h"
 
 #endif /* PHYSICALDESIGN_PHYSICALDESIGN__H */
-

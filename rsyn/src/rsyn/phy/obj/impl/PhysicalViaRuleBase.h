@@ -1,3 +1,7 @@
+// 文件功能：实现过孔规则的名称、类型和公共层参数读取。
+// 【零基础阅读】读取规则的公共名称、类别与层相关参数。
+// 基类方法供派生规则共用，专用切孔/生成参数在相应派生接口里。
+// 工艺规则查询只是取要求，实际布线是否合法需结合具体几何检查。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +25,7 @@
  */
 
 namespace Rsyn {
+// data->clsName 规则名、clsRelativeIndex 规则编号、clsLayers 层数组；身份数据不同于位置。
 
 inline int PhysicalViaRuleBase::getIndex() const {
 	return data->id;

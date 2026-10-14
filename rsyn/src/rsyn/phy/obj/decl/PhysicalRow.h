@@ -1,3 +1,7 @@
+// 文件功能：声明放置行的位置、尺寸、朝向和 site 接口。
+// 【零基础阅读】查询单元放置行的起点、大小、朝向和 site 模板。
+// 放置行是摆单元的座位组织，不是布线金属轨道。
+// 本接口读已有 DEF 布局资料，改变实例位置要走设计更新接口。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALROW_H
 
 namespace Rsyn {
+// clsOrigin 行起点，clsStep 两轴步长均 DBU；clsNumSites[轴] 座位重复数，clsPhysicalSite 为尺寸模板。
 
 class PhysicalRow : public Proxy<PhysicalRowData> {
 	friend class PhysicalDesign;
@@ -90,4 +95,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALROW_H */
-

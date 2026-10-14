@@ -1,4 +1,9 @@
-/* Copyright 2014-2018 Rsyn		
+// 文件功能：转换旧格式字符串中的引脚方向/用途与 Rsyn 枚举，兼容 LEF 和 Bookshelf 导入。
+// 【零基础阅读】把 "INPUT"/"POWER" 等外部文字转换为 Rsyn 的方向/用途枚举。
+// if 比较字符串选择类别，未知文字返回未知值；不要把它强行视为默认合法类别。
+// Bookshelf 是另一种输入约定，转换规则不一定与 LEF 完全相同。
+/* Copyright 2014-2018 Rsyn
+ * direction 在这些转换函数为输入文字，返回 Direction/Use 为枚举；未知文字返回未知类别。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

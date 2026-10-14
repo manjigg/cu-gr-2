@@ -1,3 +1,7 @@
+// 文件功能：实现物理单元的位置、朝向、库关联和几何变换查询。
+// 【零基础阅读】方法读取放置位置/朝向与库关联，并组织库形状到实际姿态的变换。
+// 库坐标属于零件图纸，实例坐标属于芯片地图；转换把两种参照系连接起来。
+// const 查询不会移动单元，真正位置更新由物理设计管理接口执行。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// data 当前实例，bounds/position DBU 几何，orientation 姿态；transform 用这些资料组织朝向变换。
 
 // -----------------------------------------------------------------------------
 
@@ -129,4 +134,4 @@ inline bool PhysicalCell::hasLayerBounds() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

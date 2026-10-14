@@ -1,3 +1,7 @@
+// 文件功能：实现生成式过孔的切孔、间距、包围和层工艺参数读取。
+// 【零基础阅读】返回生成过孔所需切孔尺寸、间距、包围和层要求。
+// 切孔阵列越大，占用金属通常也变大，不能只计阵列中心一个零面积点。
+// 参数来自规则数据，实际行列和位置由过孔描述/路由点再确定。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +25,7 @@
  */
 
 namespace Rsyn {
+// clsWidth[部位][低/高] 线宽范围，clsCutBounds 切孔形状，clsCutSpacing[轴] 孔间隔，clsVias 关联型号。
 
 inline int PhysicalViaRuleGenerate::getRelativeIndex() const {
 	return data->clsRelativeIndex;
@@ -77,4 +82,4 @@ inline float PhysicalViaRuleGenerate::getCutResistance() const {
 // -----------------------------------------------------------------------------
 
 
-} // end namespace 
+} // end namespace

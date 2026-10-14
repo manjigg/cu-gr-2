@@ -1,4 +1,9 @@
+// 文件功能：实现 guide 服务生命周期，将解析矩形按线网/工艺层映射到设计对象。
+// 【零基础阅读】启动服务准备属性存储，加载时把每网矩形放到对应逻辑线网档案。
+// 层名也要查工艺层对象，文字名字与层索引不是天然相同的值。
+// 本文件不优化这些区域的路线，只按描述组织已有 guide。
 /* Copyright 2014-2018 Rsyn
+ * session 取共享设计，网代理作属性键，guide 描述提供区域；循环追加已有区域而不搜索路径。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,4 +72,4 @@ void RoutingGuide::loadGuides(const GuideDscp & dscp) {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

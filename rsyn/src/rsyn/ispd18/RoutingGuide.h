@@ -1,4 +1,9 @@
+// 文件功能：声明路由 guide 服务，提供 guide 导入及按逻辑线网查询矩形集合的接口。
+// 【零基础阅读】guide 服务像按线网整理的走廊档案柜，负责加载和查询区域。
+// 描述中的名字需查设计里的 Net/Layer，之后才建立可靠对象关联。
+// 这是已有 guide 的管理接口，新的 CUGR 输出由 GlobalRouter 生成。
 /* Copyright 2014-2018 Rsyn
+ * 描述网名/层名先查现有 Net/Layer，再把矩形存为该网属性；输入为空不自动求新路线。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

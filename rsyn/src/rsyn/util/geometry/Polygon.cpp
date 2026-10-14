@@ -1,4 +1,9 @@
+// 文件功能：实现多边形的几何构造、顶点管理及相关形状运算。
+// 【零基础阅读】实现顶点组织与形状操作，把已有几何描述转成可用多边形。
+// 顶点顺序影响边的连接，列表中相同点集合不一定表达同一个边界顺序。
+// 这类几何操作被物理路径转换复用，路线搜索仍由路由算法单独完成。
 /* Copyright 2014-2018 Rsyn
+ * 遍历点/边时游标为顶点序号，坐标值为几何数；添加/清理改列表，查询边界读已有几何。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

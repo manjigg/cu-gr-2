@@ -1,3 +1,7 @@
+// 文件功能：实现放置 site 的名称、尺寸及类型读取。
+// 【零基础阅读】从 site 模板取得名称和基本座位尺寸，用于解释放置行/单元布局。
+// 共享模板可以被许多行引用，返回代理不复制所有放置位置。
+// 本文件实现短查询方法，声明在 decl，真实字段在 data。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// clsSize.x/y DBU 宽高，clsSiteClass 类型，clsSymmetry 对称标志；get 查询不实际摆放单元。
 
 inline std::string PhysicalSite::getName() const {
 	return data->clsSiteName;
@@ -70,4 +75,4 @@ inline Rsyn::PhysicalSymmetry PhysicalSite::getSymmetry() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

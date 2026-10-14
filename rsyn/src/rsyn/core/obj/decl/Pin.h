@@ -1,3 +1,8 @@
+// 文件功能：声明引脚的实例/库关联、线网连接、方向和逻辑弧遍历接口。
+// 【零基础阅读】Pin 的菜单从一个引脚出发查询其所属实例、线网、库模板与弧。
+// getInstance 问“端点属于哪个零件”，getNet 问“端点接在哪个信号上”。
+// 两种归属不同；引脚名也不应当直接当实例名查找。
+// const 接口用于只读遍历，真正连接修改通常由设计管理接口实施。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 PinData；instance/net 为所属实例/网；index 型号内下标；direction 信号方向。
+// arcs[遍历方向] 为入/出关系，boundary 区分端口；实际端形状还需查 PhysicalDesign。
 
 //! @brief A proxy class representing a netlist pin.
 class Pin : public Proxy<PinData> {	

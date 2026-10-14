@@ -1,3 +1,7 @@
+// 文件功能：声明引脚单层矩形/多边形及层信息接口。
+// 【零基础阅读】查询某引脚在一个工艺层上的矩形/多边形和层关联。
+// hasRectangleBounds 判断是否有矩形可读，allBounds 逐个返回矩形。
+// 调用方应遵守形状类别检查，而不是假设所有层形状都只有矩形。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALPINLAYER_H
 
 namespace Rsyn {
+// clsBounds 矩形表，clsPolygons 多边形表，clsLibLayer 所属层；两种几何表不可直接混作一种。
 
 class PhysicalPinLayer : public Proxy<PhysicalPinLayerData> {
 	friend class PhysicalDesign;
@@ -74,4 +79,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALPINLAYER_H */
-

@@ -1,4 +1,9 @@
+// 文件功能：实现共享会话初始化、服务/Reader 管理、文件定位和内置组件注册。
+// 【零基础阅读】实现共享前台的初始化、名字到服务/读取器的注册和文件定位。
+// 注册函数像登记联系方式，运行请求时才调用相应创建/启动流程。
+// shared/static 状态与普通局部变量寿命不同，阅读初始化时要分清谁持有实际数据。
 /* Copyright 2014-2018 Rsyn
+ * name 是服务/读取器注册键，params 配置表，path 文件查找目录；初始化与查已有服务副作用不同。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

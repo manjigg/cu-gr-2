@@ -1,3 +1,8 @@
+// 文件功能：实现线网引脚集合、驱动/负载、连接信息和拓扑属性查询。
+// 【零基础阅读】实现从某条 Net 出发访问驱动、负载和全体连接引脚。
+// 驱动信息帮助表达逻辑方向，但物理路由最终仍需让全部相关引脚连通。
+// 遍历返回的是引脚代理，不是展开后的物理接入网格点。
+// 可沿 getName/getUse/allPins 追到字段来源，再看 CUGR Design::read 如何转换。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data->pins 端点表，driver 驱动，numPinsOfType 分类数量，netUse 用途，sign 遍历状态。
+// 按信号方向筛驱动/负载；这些关系用于逻辑连接，不是已经生成的物理线段。
 
 inline
 Design

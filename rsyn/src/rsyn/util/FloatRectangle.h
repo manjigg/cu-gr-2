@@ -1,4 +1,9 @@
+// 文件功能：提供单精度矩形类型及位置、尺寸和几何操作。
+// 【零基础阅读】float 矩形存单精度小数位置/尺寸，空间小而精度也与 double 不同。
+// 矩形几何操作问范围和大小，不代表某条线网已经连通。
+// 与 DBU 版本混用要注意转换单位/取整，不能只因为都是矩形就直接互换数字。
 /* Copyright 2014-2018 Rsyn
+ * 位置/宽高使用 float；另一矩形参数用于相交/比较，数字精度与整数 DBU 模型不同。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -268,4 +273,3 @@ public:
 
 
 #endif
-

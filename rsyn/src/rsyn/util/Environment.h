@@ -1,4 +1,10 @@
+// 文件功能：读取并解析布尔/整数/浮点/字符串环境变量，缺失或解析失败时返回默认值。
+// 【零基础阅读】环境变量是终端给程序的名字/文字配置，getenv 取原文字。
+// 输入流将文字解析成整数/小数/布尔等类型，缺失或失败返回调用者给的默认值。
+// 例如 "8" 解析后才是数字 8，这与读取 LEF/DEF 设计文本不是同一个流程。
 /* Copyright 2014-2018 Rsyn
+ * name 环境变量名，defaultValue 缺失/解析失败时返回值，value 为 getenv 取出的文字地址。
+ * str 待解析文字，iss 字符串输入流，data 转换后变量；解析成功才用 data，否则用默认值。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,4 +61,3 @@ public:
 
 
 #endif
-

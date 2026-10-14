@@ -1,3 +1,7 @@
+// 文件功能：声明物理区域名称、类型和边界约束接口。
+// 【零基础阅读】查询物理约束区域的名字、类别和边界集合。
+// 多个矩形可以拼成区域；一个大包围盒未必准确代表区域的所有可用位置。
+// 保存和查询约束不等于自动执行约束，实际应用由后续算法负责。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALREGION_H
 
 namespace Rsyn {
+// clsBounds[i] 区域第 i 块 DBU 矩形；区域名是文字键，类型标志是约束类别而非信号方向。
 
 class PhysicalRegion : public Proxy<PhysicalRegionData> {
 	friend class PhysicalDesign;
@@ -65,4 +70,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALREGION_H */
-

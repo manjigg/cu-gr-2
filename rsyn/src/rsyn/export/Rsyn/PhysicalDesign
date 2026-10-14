@@ -1,1 +1,6 @@
+// 文件功能：为 <Rsyn/PhysicalDesign> 导出物理设计聚合头文件。
+// 【零基础阅读】让调用方写 <Rsyn/PhysicalDesign> 而不必记住内部目录路径。
+// 被转发的文件聚合物理对象，加载/查询实现再分到 phy/obj 各文件。
+// include 是编译时引入定义，实际 LEF/DEF 加载由 Reader 启动。
 #include "rsyn/phy/PhysicalDesign.h"
+// 本入口无独立字段，data/clsPhysical* 的变量表在 phy/obj/data/PhysicalDesign.h。

@@ -1,4 +1,9 @@
+// 文件功能：提供双精度矩形类型及位置、尺寸和几何操作。
+// 【零基础阅读】double 矩形能表达带小数的坐标/尺寸，区别于整数 DBU 边界。
+// 左下位置与宽高/右上边界之间可互相换算，读取方法要先认清表示方式。
+// 几何助手不做路线评分，模板/类型的使用由具体算法选择。
 /* Copyright 2014-2018 Rsyn
+ * 位置/宽高参数为双精度几何量；lower/upper 是边界角，width/height 是差值，不是对象数量。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -268,4 +273,3 @@ public:
 
 
 #endif
-

@@ -1,4 +1,9 @@
+// 文件功能：提供双精度二维向量的坐标访问、算术和几何辅助运算。
+// 【零基础阅读】两个 double 小数表达二维向量，支持 x/y 与按轴索引访问。
+// 加减向量可表示位移，乘除缩放大小；类型本身不规定数字是微米还是别的单位。
+// 使用方要明确坐标参照系与单位，才能与 DBU 整数几何正确转换。
 /* Copyright 2014-2018 Rsyn
+ * x/y 为双精度分量，rhs 为另一向量，乘除参数为缩放数；单位由调用方约定而非类名决定。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

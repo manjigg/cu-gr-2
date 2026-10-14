@@ -1,4 +1,9 @@
+// 文件功能：为网表对象提供按对象索引关联的泛型属性存储及生命周期管理。
+// 【零基础阅读】属性容器按对象身份挂额外数据，像用学生编号查询另一张成绩表。
+// template 让同一组织方式可装不同类型的成绩/物理记录/状态。
+// 对象集合变化时需配合调整属性存储，本文件处理这类基础管理而不是选路线。
 /* Copyright 2014-2018 Rsyn
+ * 模板对象类型为映射键、附加类型为值；id/index 定位关联槽，value 才是该对象附加资料。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -378,4 +383,3 @@ const RsynObjectExtension &Attribute<RsynObject, RsynObjectExtension>::operator[
 
 
 #endif
-

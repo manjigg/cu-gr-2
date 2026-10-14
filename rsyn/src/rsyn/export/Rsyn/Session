@@ -1,1 +1,6 @@
+// 文件功能：为 <Rsyn/Session> 导出共享会话与服务管理头文件。
+// 【零基础阅读】统一短名字入口转到 Session，共享前台负责设计/读取器/服务查找。
+// 多个会话代理可访问共享资料，具体初始化与管理在 session/Session.cpp。
+// 此转发文件只有 include，不会自动启动所有已注册服务。
 #include "rsyn/session/Session.h"
+// 本入口无独立会话，SessionData 的 clsDesign/clsLibrary/clsPaths 等定义在 session/Session.h。

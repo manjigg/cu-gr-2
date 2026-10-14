@@ -1,3 +1,8 @@
+// 文件功能：声明库引脚的方向、用途、名称及所属库对象查询接口。
+// 【零基础阅读】此代理让调用方查询模板接线端名称、输入/输出方向及信号用途。
+// 方向枚举像 IN/OUT 是类别，不能理解成 x/y 方向或金属布线方向。
+// getLibraryCell 一类关联查询可回到所属型号，进一步遍历它的其他引脚。
+// 方法末尾 const 说明只读；这里的方法列表尚不是执行顺序。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 为 LibraryPinData；index 型号内引脚下标，name 引脚名，lcell 型号，direction 信号方向。
+// pinUse 表示电源/信号用途；名字/方向/用途查询与几何矩形查询是不同模块。
 
 //! @brief A proxy class representing a library arc.
 class LibraryPin : public Proxy<LibraryPinData> {

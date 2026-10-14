@@ -1,3 +1,7 @@
+// 文件功能：保存库障碍的工艺层和矩形集合。
+// 【零基础阅读】Obstacle 表示已有金属或禁止穿越区域，按层保存多个矩形。
+// 同样平面坐标在不同层有不同意义，所以障碍形状必须连同层引用保存。
+// CUGR 后面将其扩张并扣减轨道容量；此处只保存原始几何。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,7 @@
 
 
 namespace Rsyn {
+// clsLayer 工艺层，clsBounds[i] 第 i 块 DBU 障碍；模板障碍使用时还需实例位移/朝向变换。
 
 class PhysicalObstacleData : public PhysicalObject {
 public:
@@ -42,4 +47,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALOBSTACLEDATA_H */
-

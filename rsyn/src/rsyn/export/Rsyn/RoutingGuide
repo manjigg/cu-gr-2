@@ -1,1 +1,6 @@
+// 文件功能：为 <Rsyn/RoutingGuide> 导出 guide 服务头文件。
+// 【零基础阅读】转发按线网管理 guide 区域的服务接口。
+// guide 是推荐走廊，完整服务加载/查询在 ispd18/RoutingGuide 系列文件。
+// 新的路线和 guide 输出由 CUGR GlobalRouter 完成，不在此转发文件中。
 #include "rsyn/ispd18/RoutingGuide.h"
+// 本入口无额外 guide 数据，按网保存的矩形/层信息在被转发服务中。

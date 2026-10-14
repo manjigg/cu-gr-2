@@ -1,3 +1,8 @@
+// 文件功能：声明层次模块代理的实例/线网集合、端口和拓扑遍历接口。
+// 【零基础阅读】模块像容器，这里提供找成员和逐成员遍历的菜单。
+// allInstances/allNets 分别返回实例/线网范围，范围 for 会依次取出对象。
+// 层次模块不必等同于整块芯片，CUGR 读取的是设计顶层模块。
+// 接口定义在这里，集合存在哪里看 data，如何遍历/查询看 impl。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 关联模块资料，instances/nets/ports 为集合，portsByDirection 按信号方向分组。
+// 输入 name 是查找钥匙，返回代理可再问属性；不是返回一段已布线路径。
 
 //! @brief A proxy class representing a netlist module.
 class Module : public Instance {

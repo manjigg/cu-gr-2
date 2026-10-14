@@ -1,3 +1,7 @@
+// 文件功能：保存工艺层类型、索引、规则和 LEF 层对象。
+// 【零基础阅读】一层工艺资料说明它是金属布线层还是切孔层，以及宽度/规则等信息。
+// 编号用于数组定位，名称如 M2 用于文件输出，类型用于判断用途。
+// 底层 LEF 对象还提供详细规则；PhysicalLayer 代理包装这些数据供导入器查询。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,8 @@
 
 
 namespace Rsyn {
+// clsWidth DBU 线宽，clsIndex 全层表编号，clsRelativeIndex 同类别相对编号，clsType 层类别。
+// clsLower/clsUpper 相邻层资料地址，nullptr 表示没有该侧层。
 
 class PhysicalLayerData : public PhysicalObject {
 public:
@@ -49,4 +55,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALLAYERDATA_H */
-

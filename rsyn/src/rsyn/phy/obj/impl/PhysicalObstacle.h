@@ -1,3 +1,7 @@
+// 文件功能：实现障碍工艺层和矩形集合读取。
+// 【零基础阅读】从障碍记录返回所属层和矩形集合，供容量估计读取。
+// 这里得到原始边界；加间距、折算占用轨道是 GridGraph 中的后续步骤。
+// allBounds 的多个矩形需分别处理，不能把集合名字当成单个 Bounds。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// clsLayer 层代理，clsBounds 多块 DBU 矩形；返回范围后由调用者 for 逐形状扣减估计容量。
 
 inline Rsyn::PhysicalLayer PhysicalObstacle::getLayer() const {
 	return data->clsLayer;
@@ -45,4 +50,4 @@ inline bool PhysicalObstacle::hasLayer() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

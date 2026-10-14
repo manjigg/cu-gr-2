@@ -1,3 +1,7 @@
+// 文件功能：声明实例物理引脚的坐标与几何关联接口。
+// 【零基础阅读】实例物理引脚接口提供实际位置/几何关联，区别于库模板引脚。
+// 返回坐标时要看是局部还是全局，不能未经变换就直接混用。
+// 方法声明说明可问的问题，字段和查询细节分别在 data/impl 中。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALPIN_H
 
 namespace Rsyn {
+// clsDisplacement DBU 相对位移，clsPhysicalPinGeometries 组列表，clsLayerBound 指定层边界。
 
 class PhysicalPin : public Proxy<PhysicalPinData> {
 	friend class PhysicalDesign;
@@ -74,4 +79,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALPIN_H */
-

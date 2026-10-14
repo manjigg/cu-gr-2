@@ -1,4 +1,9 @@
+// 文件功能：定义库模块描述对象，用于导入阶段表示模块的库级信息。
+// 【零基础阅读】库模块描述保存导入阶段的模板资料，供后续创建正式对象。
+// 描述中的名称先是文字，数据库建立后才成为对象关联/编号。
+// dscp 是 description 的缩写语境，和 data 层最终存储的用途要区分。
 /* Copyright 2014-2018 Rsyn
+ * 模块描述是模板级输入，字段不表示已经放置的实例位置；数据库填充后才建立正式身份关联。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

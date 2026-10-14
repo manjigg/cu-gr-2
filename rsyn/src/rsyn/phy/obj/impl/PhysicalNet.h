@@ -1,3 +1,7 @@
+// 文件功能：实现物理线网包围盒、引脚边界和布线数据访问。
+// 【零基础阅读】读取线网空间边界和路径数据，帮助估计分布范围。
+// bounding box 是把引脚盖住的大矩形，不等于一条已布导线。
+// 想看 CUGR 当前最优路线应查 GRNet.routingTree，而非只看这份输入物理信息。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// clsBounds DBU 包围盒，clsBoundPins[轴][低/高] 边界引脚，clsRouting 已有路径，clsNet 所属逻辑网。
 
 // -----------------------------------------------------------------------------
 
@@ -90,4 +95,4 @@ inline bool PhysicalNet::isRouted() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

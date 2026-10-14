@@ -12,6 +12,10 @@ ACM/IEEE Design Automation Conference (DAC), San Francisco, CA, USA, July 9-13, 
 (CUGR 2.0 supports ICCAD'19 benchmarks ([v2](http://iccad-contest.org/2019/Problem_C/iccad19_benchmarks_v2.tar.gz), [hidden](http://iccad-contest.org/2019/Problem_C/iccad19_hidden_benchmarks.tar.gz)).
 This version of code is consistent with the DAC paper.)
 
+## 中文代码导览
+
+从 [CODE_GUIDE.md](CODE_GUIDE.md) 按实际执行顺序学习；遇到变量查 [VARIABLE_REFERENCE.md](VARIABLE_REFERENCE.md)，查询完整语法、逐文件职责和算法手算看 [CODE_REFERENCE.md](CODE_REFERENCE.md)。源码中的成员说明、函数变量表与步骤注释解释单位、索引、输入输出和逻辑。
+
 ## 1. How to Build
 
 **Step 1:** Download the source code. For example,

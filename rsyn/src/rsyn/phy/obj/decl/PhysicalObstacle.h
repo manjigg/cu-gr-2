@@ -1,3 +1,7 @@
+// 文件功能：声明障碍工艺层和矩形集合接口。
+// 【零基础阅读】查询障碍在哪层、由哪些矩形组成，用于识别不能随意布线的位置。
+// allBounds 是多个边界的集合，一个障碍对象不必只有一个矩形。
+// 真正间距扩张和容量扣减由使用方完成，查询形状本身不更新路由资源。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALOBSTACLE_H
 
 namespace Rsyn {
+// clsLayer 障碍层，clsBounds[i] 第 i 个 DBU 矩形；i 是列表下标，矩形坐标另存 Bounds 内。
 
 class PhysicalObstacle : public Proxy < PhysicalObstacleData > { 
 	friend class PhysicalDesign;
@@ -57,4 +62,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALOBSTACLE_H */
-

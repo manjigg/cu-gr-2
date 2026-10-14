@@ -1,3 +1,7 @@
+// 文件功能：声明裸片边界和尺寸读取接口。
+// 【零基础阅读】查询整块芯片边界的代理接口，Bounds 可理解为左下/右上两个角。
+// 坐标单位是 DBU，边界提供空间范围，不代表网格已被自动创建。
+// CUGR 读取这个范围，再结合 GCELLGRID 生成自己的资源图尺寸。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALDIE_H
 
 namespace Rsyn {
+// data->clsBounds 整裸片 DBU 边界；dimension 为查询 x/y 轴，不是某个金属层。
 
 class PhysicalDie : public Proxy<PhysicalDieData> {
 	friend class PhysicalDesign;
@@ -62,4 +67,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALDIE_H */
-

@@ -1,3 +1,7 @@
+// 文件功能：保存物理间距规则的约束参数。
+// 【零基础阅读】间距可能随线宽、并行长度等条件改变，所以规则有参数而非单个常数。
+// 数据成员记条件和要求，使用方查询匹配条件后才知道应保留多大间隙。
+// 这是工艺资料存储，CUGR 对其使用是通过层对象提取所需部分。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSPACINGRULEDATA_H
 
 namespace Rsyn {
+// clsSpacing 间隙，clsEOL 线端相关宽度参数，clsEOLWithin 规则作用距离，单位均 DBU。
 
 class PhysicalSpacingRuleData {
 public:
@@ -42,4 +47,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPACINGRULEDATA_H */
-

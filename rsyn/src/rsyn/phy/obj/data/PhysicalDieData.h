@@ -1,3 +1,7 @@
+// 文件功能：保存芯片裸片边界，为布局和 GCell 提供空间范围。
+// 【零基础阅读】Die 是整块芯片的边界，不是某个标准单元的边界。
+// Bounds 的左下/右上坐标限定放置和网格范围，坐标以 DBU 整数存储。
+// 此处存边界资料；PhysicalDie 代理的方法从这里返回尺寸与范围。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALDIEDATA_H
 
 namespace Rsyn {
+// clsBounds 裸片 DBU 左下/右上边界，宽高由两端相减，不是格子个数。
 
 class PhysicalDieData {
 	friend class PhysicalDesign;
@@ -42,4 +47,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALDIEDATA_H */
-

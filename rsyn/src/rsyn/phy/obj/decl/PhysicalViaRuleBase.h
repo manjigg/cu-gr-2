@@ -1,3 +1,7 @@
+// 文件功能：声明过孔规则的公共名称、层和类别接口。
+// 【零基础阅读】公共规则基类提供名称、类别和通用层资料，派生规则增加专用字段。
+// 继承像共用配方封面，固定规则与生成式规则的具体条款不同。
+// public 方法是查询菜单，底层规则字段在 ViaRuleData 中保存。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,7 @@
 #define RSYN_DATABASE_PHYSICALVIARULEBASE_H
 
 namespace Rsyn {
+// data 指 ViaRuleData，clsRelativeIndex 规则编号，clsLayers 底/切/顶层；不是已放置过孔的坐标。
 
 class PhysicalViaRuleBase : public Proxy<ViaRuleData> {
 	friend class PhysicalDesign;
@@ -70,4 +75,3 @@ public:
 
 
 #endif /* RSYN_DATABASE_PHYSICALVIARULEBASE_H */
-

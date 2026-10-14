@@ -1,4 +1,9 @@
+// 文件功能：定义物理设计变更观察者的回调接口。
+// 【零基础阅读】观察者约定物理对象变化时可通知哪些回调，例如位置更新。
+// 注册服务接到通知后自行刷新资料，这就是“事件驱动”，不是不断轮询每个单元。
+// virtual 方法允许不同观察者实现不同响应，接口本身不规定统一路由算法。
 /* Copyright 2014-2018 Rsyn
+ * 事件对象参数标明哪个实例/物理对象变化，位置是 DBU 向量，事件类别决定回调而非金属层。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,4 +52,3 @@ public:
 
 
 #endif /* RSYN_PHYSICALOBSERVER_H */
-

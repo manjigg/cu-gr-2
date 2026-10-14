@@ -1,4 +1,9 @@
+// 文件功能：定义颜色数据及颜色转换/访问助手，供可视化工具使用。
+// 【零基础阅读】颜色对象把各颜色通道/表示放在一起，供界面或图形输出使用。
+// 颜色是展示方式，不是路径层号、容量或拥塞分数本身。
+// 构造/转换方法控制数字怎样显示成颜色，与路线计算解耦。
 /* Copyright 2014-2018 Rsyn
+ * 颜色通道是显示数值，透明度描述绘图混合；颜色编号不是金属层编号或路由器真实评分。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,4 +62,3 @@ public:
 
 
 #endif	/* COLOR_H */
-

@@ -1,3 +1,7 @@
+// 文件功能：实现轨道方向、首轨位置、轨距、轨数和关联层读取。
+// 【零基础阅读】读取轨道首位置、轨距、轨数、方向与关联层。
+// 第 i 条轨道位置可按首位置+i×轨距计算，i 是编号而不是 DBU 坐标。
+// 调用方再查询某网格内包含哪些轨道，以估计那条网格边的容量。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// 第 i 轨位置由 clsLocation+i*clsSpace 得到；i 是轨道序号，clsLayers 是适用层表。
 
 inline PhysicalTrackDirection PhysicalTracks::getDirection() const {
 	return data->clsDirection;
@@ -64,4 +69,3 @@ inline const std::vector<PhysicalLayer> & PhysicalTracks::allLayers() const {
 
 // -----------------------------------------------------------------------------
 } // end namespace 
-

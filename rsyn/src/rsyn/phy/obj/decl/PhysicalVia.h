@@ -1,3 +1,7 @@
+// 文件功能：声明过孔的层、几何集合和规则生成参数接口。
+// 【零基础阅读】过孔接口分别提供底层、切孔层、顶层及各层形状。
+// 生成式过孔还需看 has* 标志和尺寸/间距/包围参数，不能只遍历固定矩形。
+// 本代理描述一类过孔几何，实际放置位置来自路由点/PhysicalRoutingVia。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALVIA_H
 
 namespace Rsyn {
+// clsLayers/clsViaGeometries 第一索引为底/切/顶；clsEnclosure/clsOffset 第一索引仅为底/顶金属。
+// clsCutSize/Spacing/Origin 第二轴 0=x/1=y，单位 DBU；clsNumRows/Cols 为阵列数量，has* 表示可选项。
 
 class PhysicalVia : public Proxy<PhysicalViaData> {
 	friend class PhysicalDesign;
@@ -89,4 +95,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALVIA_H */
-

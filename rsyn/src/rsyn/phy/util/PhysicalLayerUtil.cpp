@@ -1,3 +1,7 @@
+// 文件功能：实现层类型、方向、朝向等枚举与字符串转换及物理对象名称助手。
+// 【零基础阅读】把 "ROUTING"/"HORIZONTAL"/"N" 等文件文字转换成程序枚举，也做反向转换。
+// if/switch 选择匹配类别；未知文字返回未知/无效标志，不能假设都有合法匹配。
+// 这些转换让后续代码用编号比较类别，不必每次重复比较长字符串。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +26,8 @@
 #include "PhysicalUtil.h"
 
 namespace Rsyn {
+// type/direction/orientation 参数可为输入文字或枚举重载，返回对应类别或其文字表示。
+// switch 的分支编号只解释本枚举，未知输入回无效值；不是默认替换成一层可用金属。
 
 static const std::string NULL_PHY_NAME = "*<NULL_PHY_NAME>*";
 static const std::string GEN_NAME = "*<GEN_NAME>*_";
@@ -374,4 +380,3 @@ std::string getPhysicalNullName() {
 // -----------------------------------------------------------------------------
 
 } // end namespace 
-

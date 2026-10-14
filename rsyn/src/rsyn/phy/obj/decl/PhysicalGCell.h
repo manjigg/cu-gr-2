@@ -1,3 +1,7 @@
+// 文件功能：声明 GCell 方向、位置、重复数量和步长读取接口。
+// 【零基础阅读】查询一组重复网格线的起点、数量、步长和方向。
+// getNumTracks 在此对应 GCELLGRID 重复数量，不要混成金属 TRACKS 总轨数。
+// 调用方展开这些定义后得到实际网格边界，本代理只返回现有参数。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +21,7 @@
 #define PHYSICALGCELL_H
 
 namespace Rsyn {
+// clsDirection 线方向，clsLocation 首线位置 DBU，clsNumTracks 重复数量，clsStep 步长 DBU。
 
 class PhysicalGCell : public Proxy<PhysicalGCellData> {
 	friend class PhysicalDesign;
@@ -45,4 +50,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALGCELL_H */
-

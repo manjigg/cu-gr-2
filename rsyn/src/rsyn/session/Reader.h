@@ -1,4 +1,9 @@
+// 文件功能：定义 Reader 输入加载基类，将格式读取与 PopulateRsyn 数据库填充衔接。
+// 【零基础阅读】Reader 是读取器公共协议，各格式读取器提供自己的 load 方法。
+// 参数用 JSON 传文件名/选项，解析后借 PopulateRsyn 把描述装进共享设计。
+// 继承基类共用填充能力，不等于创建 Reader 基类就自动读取所有格式。
 /* Copyright 2014-2018 Rsyn
+ * params 为 JSON 输入设置，design 为待填逻辑数据库；模板/描述字段不是最终路由树。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,4 +45,3 @@ public:
 
 
 #endif /* RSYN_READER_H */
-

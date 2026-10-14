@@ -1,3 +1,7 @@
+// 文件功能：保存路径点的位置、延伸和过孔参数。
+// 【零基础阅读】路由点不仅有位置，还可能含过孔、延伸量、矩形和朝向。
+// clsHas* 是“是否提供该属性”的布尔标记，未提供不能随意当成有效信息。
+// 点与相邻点组成路径，宽度/延伸等属性共同决定实际占用金属的范围。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALROUTINGPOINTDATA_H
 
 namespace Rsyn {
+// clsVia 过孔型号，clsPos DBU 放置坐标，clsRectangle 可选矩形，clsExtension DBU 端延伸。
+// clsOrientation 姿态，clsHasRectangle/Mask/Virtual 标明可选资料存在；默认数不等于输入已提供。
 
 class PhysicalRoutingPointData : public PhysicalObject {
 public:
@@ -51,4 +57,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALROUTINGPOINTDATA_H */
-

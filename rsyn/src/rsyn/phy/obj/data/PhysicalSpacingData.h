@@ -1,3 +1,7 @@
+// 文件功能：保存工艺间距条目的参数和关联。
+// 【零基础阅读】Spacing 记录金属对象之间应留多少间隙的工艺描述。
+// 留白是为了满足制造/电气规则，不能理解为某条线网已经消耗的容量。
+// 本文件保存间距条目，查询/规则解释在对应代理及调用方完成。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSPACINGDATA_H
 
 namespace Rsyn {
+// clsLayer1/clsLayer2 相关两层，clsDistance 要求间隙 DBU，不是从当前几何测出的实际距离。
 
 class PhysicalSpacingData : public PhysicalObject {
 public:
@@ -43,4 +48,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPACINGDATA_H */
-

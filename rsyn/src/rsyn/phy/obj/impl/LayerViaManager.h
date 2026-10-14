@@ -1,3 +1,7 @@
+// 文件功能：实现按工艺层组织和查找过孔的方法。
+// 【零基础阅读】方法从按层组织的资料中取得关联过孔，避免逐个扫描全部过孔。
+// -> 从底层数据指针取成员；返回代理让调用方继续查形状/规则。
+// 这里负责查询已有资料，最终选哪只过孔由调用它的算法决定。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  * Created on February 3, 2018, 9:31 AM
  */
 namespace Rsyn {
+// layer 是字典键，data->clsVias/BottomVias/TopVias 对应该层的候选过孔表，返回的不是唯一选定过孔。
 
 inline const std::vector<Rsyn::PhysicalVia> & LayerViaManager::allVias(Rsyn::PhysicalLayer layer) const {
 	return data->clsVias[layer];

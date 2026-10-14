@@ -1,4 +1,14 @@
+// 文件功能：声明 DEF 线网、子线网、导线、屏蔽与虚拟引脚等连接/路径数据接口。
+// 【零基础阅读】线网对象同时可保存端点连接与已有路径、子网、屏蔽等资料。
+// 端点名单回答“连谁”，wire/path 回答“已怎么走”，两种信息要分开理解。
+// Rsyn 回调遍历本对象转成描述，CUGR 再把需要的信号网与固定几何分开处理。
 // *****************************************************************************
+// 【实际字段】numPins_/numPaths_/numWires_ 是已用端点/路径/导线数，*Allocated_ 是预留容量。
+// nameSize_ 是名字缓冲区容量而非实例数；weight_ 网权重，hasWeight_ 表明是否提供权重。
+// isFixed_/isRouted_/isCover_ 路径状态；cap_/frequency_/voltage_ 是电气量，has* 说明有效性。
+// numProps_/numSubnets_/numVpins_/numShields_/numRects_/numPolys_ 是不同对象列表的已用数量。
+// xLoc_/yLoc_ 虚拟引脚位置，xl_/yl_/xh_/yh_ 其边界；orient_ 姿态，不能与信号方向混用。
+// 多个类有同名字段，名字含义须连同所属 defiNet/defiSubnet/defiWire 类理解。
 // *****************************************************************************
 // Copyright 2013 - 2017, Cadence Design Systems
 // 

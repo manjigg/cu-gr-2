@@ -1,4 +1,10 @@
+// 文件功能：Rsyn 逻辑网表的聚合入口，按依赖顺序装配代理、数据结构、声明和内联实现。
+// CUGR 通过此头文件访问 Design/Module/Instance/Net/Pin 等逻辑对象。
+// 【零基础阅读】网表总入口按依赖顺序引入类型、代理、数据、声明和实现。
+// 类比总目录，不是运行函数；include 使编译器看见对象定义，加载输入另由 Reader 执行。
+// 想找某对象字段看 core/obj/data，想找菜单看 decl，想找方法体看 impl。
 /* Copyright 2014-2018 Rsyn
+ * 本聚合入口只装配类型/方法，不新建每一类资料；实际字段详见 obj/data 各同名类型。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

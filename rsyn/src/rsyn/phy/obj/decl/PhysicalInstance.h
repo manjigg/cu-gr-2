@@ -1,3 +1,7 @@
+// 文件功能：声明物理实例的类型、位置、边界和派生代理接口。
+// 【零基础阅读】物理实例是实际放置对象的公共访问形式，拥有位置/边界等信息。
+// 更专门的 PhysicalCell/PhysicalPort 按对象类型提供不同查询。
+// Proxy 借用已管理数据；创建代理不等于新增一个放置单元。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALINSTANCE_H
 
 namespace Rsyn {
+// data 指实际实例资料，clsInstance 逻辑关联，clsInitialPos 初始 DBU 点，clsPort 区分端口。
+// bounds/position 查询是长度坐标，不含 CUGR 结果树的网格索引。
 class PhysicalInstance : public Proxy<PhysicalInstanceData> {
 	friend class PhysicalDesign;
 protected:
@@ -95,4 +101,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALINSTANCE_H */
-

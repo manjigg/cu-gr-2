@@ -1,4 +1,9 @@
+// 文件功能：在文本终端输出进度条，显示循环/任务完成比例。
+// 【零基础阅读】用文本字符画完成比例，方便终端看长任务进行到多少。
+// 已完成数除总数得到比例，再映射为多少个填满的字符。
+// 进度条只观察进度，不能让任务自动完成，也不改变线网处理顺序。
 /* Copyright 2014-2018 Rsyn
+ * 完成量/总量决定比例，显示宽度决定字符数；显示进度不会改变实际任务完成计数。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,4 +111,3 @@ public:
 }; // end class
 
 #endif	/* ASCIIPROGRESSBAR_H */
-

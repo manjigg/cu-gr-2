@@ -1,3 +1,7 @@
+// 文件功能：实现 GCELLGRID 方向、位置、数量和步长读取。
+// 【零基础阅读】getDirection/getLocation/getNumTracks/getStep 读取四项网格定义。
+// data->clsStep 等是字段访问，没有在查询时重新从 DEF 文本解析。
+// 外部按起点+i×步长展开边界，数量减一才是相邻边界间的格子数。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// 每个 get 方法分别返回 clsDirection/Location/NumTracks/Step；前后两数量/步长不能互换。
 //! @brief Returns GCell direction
 
 inline Rsyn::PhysicalGCellDirection PhysicalGCell::getDirection() const {

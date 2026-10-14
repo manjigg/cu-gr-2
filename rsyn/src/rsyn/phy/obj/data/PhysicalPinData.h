@@ -1,3 +1,7 @@
+// 文件功能：保存实例物理引脚的几何和位置关联。
+// 【零基础阅读】实例物理引脚回答“这个实际接线端在哪里”，不同于库引脚模板。
+// 数据与实际逻辑引脚关联，通过实例位置/模板几何可得到所需物理信息。
+// 本文件存记录，PhysicalPin 代理提供查询，路径选择由路由模块另做。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,8 @@
 #define PHYSICALDESIGN_PHYSICALPINDATA_H
 
 namespace Rsyn {
+// clsDisplacement DBU 相对位移，clsPhysicalPinGeometries 形状组表。
+// clsDirection 信号方向，clsLayerBound 指定层边界；不是路由器已选定的网格接入点。
 
 class PhysicalPinData {
 public:
@@ -45,4 +51,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALPINDATA_H */
-

@@ -1,3 +1,7 @@
+// 文件功能：实现引脚几何组的层集合和属性读取。
+// 【零基础阅读】把引脚几何组的层集合交给调用方，继续取得各层形状。
+// 几何组是组织结构，里面可能有多个层/矩形，不是一个最终接入点。
+// 调用方的嵌套 for 对应这些层级，本方法只是返回相应集合。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +30,7 @@
  */
 
 namespace Rsyn {
+// clsPinLayers 是当前组内层对象列表，clsPinPortClass 是组分类；列表顺序不等于工艺层号。
 
 inline PhysicalPinGeometryClass PhysicalPinGeometry::getPinGeometryClass() const {
 	return data->clsPinPortClass;
@@ -68,4 +73,4 @@ inline Rsyn::PhysicalPinLayer PhysicalPinGeometry::getUpperPinLayer() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

@@ -1,4 +1,9 @@
+// 文件功能：声明中间描述到 Rsyn 逻辑库、单元、端口和线网的填充接口。
+// 【零基础阅读】填充器把临时描述变成可查询库/实例/线网对象。
+// 描述里用名字引用，正式网表里需建立对象关联，所以创建顺序有意义。
+// 本头文件说明支持哪些输入描述，实际创建和连接过程在 .cpp。
 /* Copyright 2014-2018 Rsyn
+ * 输入描述保存名字/记录，design 是待填数据库；创建库模板后才能按型号创建实例及端点。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,4 +71,3 @@ protected:
 
 } // end namespace 
 #endif /* RSYN_POPULATERSYN_H */
-

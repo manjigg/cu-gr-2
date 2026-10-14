@@ -1,4 +1,11 @@
+// 文件功能：定义轻量数据指针代理，提供空值判断、对象身份比较及基于 id 的排序/哈希。
+// 代理复制共享底层数据，实际对象生命周期由数据库管理。
+// 【零基础阅读】代理是薄薄一层访问钥匙，data 指向真正资料；多把钥匙可指同一资料。
+// -> 访问底层字段，bool 判断空值，id 用于稳定身份比较，避免按地址造成顺序变化。
+// 代理不负责让底层数据永远存在，设计管理者的生命周期必须覆盖使用过程。
 /* Copyright 2014-2018 Rsyn
+ * data 是底层资料地址，T 模板指定资料类型，other/left/right 为比较的代理，id 稳定身份。
+ * !/bool 判断地址是否为空，== 判断是否同一资料，< 按 id 排序，std::hash 也按 id 生成键。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,4 +80,3 @@ struct hash<Rsyn::Proxy<T>> {
 } // end namespace
 
 #endif
-

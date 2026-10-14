@@ -1,3 +1,7 @@
+// 文件功能：声明库引脚的边界和几何集合接口。
+// 【零基础阅读】库引脚的物理菜单提供边界和形状组，形状不是单个数学点。
+// 一个引脚可含多层多个矩形，通常要遍历几何组再遍历层才能取全。
+// 模板几何与实际引脚接入网格点之间还隔着实例坐标变换和网格映射。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALLIBRARYPIN_H
 
 namespace Rsyn {
+// clsPhysicalPinGeometries 多组局部形状，clsLibraryCell 型号，clsDirection 信号方向，clsUse 用途。
 
 class PhysicalLibraryPin : public Proxy<PhysicalLibraryPinData> {
 	friend class PhysicalDesign;
@@ -67,4 +72,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALLIBRARYPIN_H */
-

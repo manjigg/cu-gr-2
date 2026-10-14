@@ -1,3 +1,9 @@
+# 文件功能：提供 Bash 命令执行助手、调试模式前缀及 benchmark 名称/别名/集合管理。
+# Benchmarks 将命令行选择（单个算例、集合或 all）展开成 Benchmark 对象列表。
+# 【零基础阅读】这是 run.py 导入的助手，列表存算例，字典存集合名字与成员。
+# self 是当前对象，__init__ 像 C++ 构造函数，创建对象时设置它自己的名单。
+# get_selected 将简写/全名/集合展开成待运行列表；run 用 Bash 执行拼好的命令。
+# 算例名单只是输入选择，没有在这里打开每个 LEF/DEF，也没有计算路线。
 import os
 
 # run command
@@ -22,6 +28,7 @@ mode_prefixes = {
 
 
 class Benchmark:
+    # full_name 磁盘输入目录用的算例全名，abbr_name 命令行便利简写；两者不是输入路径本身。
     def __init__(self, full_name, abbr_name):
         self.full_name = full_name
         self.abbr_name = abbr_name
@@ -30,7 +37,10 @@ class Benchmark:
         return self.full_name
 
 
+# 管理全名、简写和算例集合；列表末尾的设置是当前项目支持的 benchmark 清单。
 class Benchmarks:
+    # self.__bms 全部 Benchmark 列表，self.__bm_sets：“集合名->Benchmark 列表”字典。
+    # ids 是型号模式中要填的序号文字；name 当前查找名；bms 当前展开结果，selected 最终待办。
     def __init__(self):
         self.__bms = []
         self.__bm_sets = dict()
@@ -65,6 +75,7 @@ class Benchmarks:
         return choices
 
     def get_selected(self, names):
+        # 选 all 直接返回全部算例；否则逐项看是集合还是单个算例，再拼接结果。
         if 'all' in names:
             return self.__bms
         else:

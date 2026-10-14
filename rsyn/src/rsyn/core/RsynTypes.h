@@ -1,4 +1,10 @@
+// 文件功能：定义逻辑对象、实例、弧、引脚方向、朝向和信号用途等公共枚举。
+// 【零基础阅读】枚举给对象类别、信号方向、朝向、用途等编号命名，增强可读性。
+// 信号 INPUT/OUTPUT 与几何 HORIZONTAL/VERTICAL 是不同分类，不可混用。
+// 这里的类型约定在编译时使用，不会自己创建实例或开始布线。
 /* Copyright 2014-2018 Rsyn
+ * ObjectType/InstanceType 是对象类别，Direction 是信号方向，PhysicalOrientation 是姿态，Use 是用途。
+ * 枚举编号只能在其类别范围内解释，不能直接当网格索引、计数或长度。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

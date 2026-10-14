@@ -1,3 +1,8 @@
+// 文件功能：声明物理设计导入、对象查询、位置更新和集合遍历接口。
+// CUGR 通过此代理取得工艺、布局、引脚和特殊线网数据。
+// 【零基础阅读】PhysicalDesign 是物理总账本的访问入口，提供加载/查询/更新方法。
+// 先建立逻辑对象，再加载物理库和设计，才能把实例/引脚与几何关联起来。
+// const 查询只读数据；load/update 等操作才修改资料，方法列表不是执行顺序。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +22,9 @@
 #define PHYSICALDESIGN_PHYSICALDESIGN_H
 
 namespace Rsyn {
+// data 是全物理设计资料，cell/pin/net 等输入代理作属性表键；name 是按文字查找的钥匙。
+// index 是相应集合下标，dimension 是 0=x/1=y，DBU 参数是长度坐标而非格子号。
+// load* 改资料，get/all* 查资料，update* 同步边界/统计，三类方法的副作用不同。
 
 class PhysicalDesign : public Proxy<PhysicalDesignData> {
 	friend class PhysicalService;
@@ -482,4 +490,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALDESIGN_H */
-

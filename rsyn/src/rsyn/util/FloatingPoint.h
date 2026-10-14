@@ -1,4 +1,9 @@
+// 文件功能：提供带精度容差的浮点比较与数值辅助操作。
+// 【零基础阅读】浮点小数可能有表示误差，直接 == 不一定符合数学上的相等预期。
+// 容差比较允许差值在小范围内，用于数值判断而非修改实际几何。
+// 使用时先看容差单位/大小，不能假设所有微小差异都可以忽略。
 /* Copyright 2014-2018 Rsyn
+ * 两个待比较数是数值，容差限定允许差量；近似相等不同于把字段改成完全相同值。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -132,4 +137,3 @@ private:
 }; // end class
 
 #endif
-

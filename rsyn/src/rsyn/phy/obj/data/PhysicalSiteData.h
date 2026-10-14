@@ -1,3 +1,7 @@
+// 文件功能：保存放置 site 的名称、尺寸及类型。
+// 【零基础阅读】Site 是放置格子的基本尺寸/类别模板，供行和库单元使用。
+// 尺寸是物理长度，名称是识别模板的文字，二者都不是实例数量。
+// 此处保存模板字段，PhysicalSite 的查询方法读取它们。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSITEDATA_H
 
 namespace Rsyn {
+// clsSiteClass 模板类别，clsSize.x/y DBU 宽高，clsSymmetry 可用对称姿态标志，不是轨道方向。
 
 class PhysicalSiteData : public PhysicalObject {
 public:
@@ -43,4 +48,3 @@ public:
 } // end namespace  
 
 #endif /* PHYSICALDESIGN_PHYSICALSITEDATA_H */
-

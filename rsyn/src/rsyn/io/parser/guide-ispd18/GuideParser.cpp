@@ -1,4 +1,9 @@
+// 文件功能：读取 guide 的线网名称、括号块和矩形记录，填充 GuideDscp。
+// 【零基础阅读】先识别线网名，再进入括号内读各矩形四坐标和层名。
+// 文本数字解析成坐标，记录加入当前网的列表；遇结束括号继续下一网。
+// 输出只是描述，后续服务再关联设计对象，本文件不运行三阶段路由。
 /* Copyright 2014-2018 Rsyn
+ * 当前网名/括号状态确定区域归属，lx/ly/hx/hy 类四坐标按矩形解析，层名不能当整数层号。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

@@ -1,4 +1,9 @@
+// 文件功能：声明 ISPD guide 文本解析接口，输出线网/层/矩形描述对象。
+// 【零基础阅读】解析接口输入文件路径，输出按线网组织的 guide 描述。
+// 类内部读取状态和方法将名字/括号块/矩形区分，细节在 .cpp。
+// 读取已有 guide 与 CUGR 生成新 guide 是相反的数据流，别混成同一阶段。
 /* Copyright 2014-2018 Rsyn
+ * 文件路径是输入，GuideDscp 为输出；每条区域的数字先转换为坐标，文字层名后续再查对象。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

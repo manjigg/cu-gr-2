@@ -1,3 +1,7 @@
+// 文件功能：保存物理设计对象集合与逻辑对象到物理属性的映射。
+// 【零基础阅读】物理设计总账本保存尺寸、位置、工艺层和布局集合，不只是逻辑名单。
+// 属性映射把逻辑单元/引脚关联到物理记录，才能从引脚找到其实际形状。
+// 数据在这里，查询接口在 decl/PhysicalDesign.h，导入主要在 impl 的 .cpp。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,18 @@
 
 
 namespace Rsyn {
+// 【字段字典】cls 是成员命名前缀，不是单位；clsDesign/clsModule 关联逻辑设计/顶层。
+// clsLayerViaManager 按层查过孔；callbackAddCreatePhysicalCell/OnPreCellRemoveEvent 创建/移除前响应函数表。
+// clsPhysicalLibraryPins/Pins/Instances/LibraryCells/Nets：“逻辑对象->物理资料”属性映射。
+// clsPhysicalRows/Layers/Spacing 行/层/间距表；Regions/Groups/Sites/Vias 区域/组/site/过孔表。
+// clsPhysicalViaRuleBases/ViaRules/ViaRuleGenerates 公共/固定/生成式规则表。
+// clsPhysicalSpecialNets/Tracks/GCell/RoutingGrids 特殊网/轨道组/粗网格定义/物理轨道网格表。
+// clsMapPhysical*：“名称->列表编号”字典，clsMapLayerToTracks/ToRoutingGrid：“层->关联对象”。
+// clsPhysicalRoutingLayerIndeces 布线层在全层表的编号；Indeces 是源码原拼写。
+// clsPhysicalDie 裸片，clsTotalAreas[物理类型] 面积，clsNumElements[类型] 数量，clsNumLayers[层类别] 层数。
+// clsHPWL.x/y 总包围盒两轴线长，clsDBUs[单位类别] DBU 换算尺度。
+// clsLoadDesign 加载状态，clsEnablePhysicalPins/MergeRectangles/NetPinBoundaries 功能开关。
+// clsClkNet 时钟网，clsMode 加载模式，clsPhysicalObservers[事件类别] 响应者列表。
 
 class PhysicalDesignData : public PhysicalObject {
 	friend class PhysicalDesign;

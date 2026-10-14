@@ -1,3 +1,7 @@
+// 文件功能：实现特殊导线的路径、层和几何读取。
+// 【零基础阅读】实现特殊导线的路径与属性读取，供固定布线几何还原。
+// 路径点列表与层/宽度共同决定形状，点之间的连接不能忽略线宽。
+// 这是一份输入已有结果的访问代码，普通信号线网优化不在这里。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +32,7 @@
 
 
 namespace Rsyn {
+// clsWireWidth 是 DBU 长度，clsRoutingPoints 是连接顺序点表，clsPhysicalLayer 是路径相关层。
 
 inline Rsyn::PhysicalLayer PhysicalSpecialWire::getPhysicalLayer() {
 	return data->clsPhysicalLayer;
@@ -50,4 +55,4 @@ inline const std::vector<PhysicalRoutingPoint> & PhysicalSpecialWire::allRouting
 
 
 
-} // end namespace 
+} // end namespace

@@ -1,3 +1,7 @@
+// 文件功能：实现放置行的位置、朝向、尺寸和 site 读取。
+// 【零基础阅读】按物理行数据读取位置、朝向、尺寸和 site 模板。
+// 行中重复座位形成放置范围，金属轨道另由 PhysicalTracks 描述。
+// 查询结果主要服务布局信息，不是候选路由边的 capacity/demand。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +30,7 @@
  * Created on 18 de Setembro de 2016, 09:27
  */
 namespace Rsyn {
+// clsOrigin/Step 为两轴 DBU 起点/步长，clsNumSites[轴] 重复座位数，clsSiteOrientation 姿态。
 
 inline std::string PhysicalRow::getName() const {
 	return data->clsRowName;
@@ -129,4 +134,4 @@ inline Rsyn::PhysicalSymmetry PhysicalRow::getSymmetry() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

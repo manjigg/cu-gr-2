@@ -1,3 +1,7 @@
+// 文件功能：定义物理对象底层存储的公共基础。
+// 【零基础阅读】公共基础数据让物理对象有一致的管理方式，派生记录增加专用字段。
+// 继承可理解为沿用公共栏目，而不是复制一份芯片或执行父对象的布线流程。
+// 先区分对象身份与坐标，再看具体 Physical*Data 里新增的形状/关联。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,7 @@
 
 
 namespace Rsyn {
+// id 物理对象身份编号，INVALID_PHYSICAL_INDEX 未有效登记；不是 DBU 坐标或格子号。
 
 class PhysicalObject {
 public:
@@ -45,4 +50,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALOBJECT_H */
-

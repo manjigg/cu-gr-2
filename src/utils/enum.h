@@ -1,3 +1,10 @@
+// 文件功能：Better Enums 单头文件库，通过宏生成可遍历、可在整数/字符串间转换的枚举类型。
+// 阅读实现时依次关注编译器特性检测、宏展开助手、枚举接口和类型转换生成部分。
+// 【白话职责】枚举把一组编号命名，例如 H=0/V=1，写名字比到处写裸数字易读。
+// 普通枚举不一定自带“编号转文字/列出全部取值”，本库用宏生成这些便利功能。
+// #define 定义文本展开规则，反斜杠表示宏定义还要接下一行。
+// 本文件看起来复杂，是因为兼容多个编译器和标准版本，不能逐行当运行语句读。
+// 初学者先看枚举生成后的接口用途，随后查 optional、字符串转换和值列表助手。
 // This file is part of Better Enums, released under the BSD 2-clause license.
 // See doc/LICENSE for details, or visit http://github.com/aantron/better-enums.
 
@@ -265,6 +272,9 @@
 
 
 namespace better_enums {
+// 【变量】optional 的 _valid 表示有值、_value 为实际枚举/转换结果；它不同于三态配置。
+// iterable 的 _array/_size 为值数组地址/元素数；index 为序号，count 为总数，storage 为文字空间。
+// Enum/Underlying 宏参数为生成类型名/底层整数类型；表达式参数在编译时展开，不是运行输入。
 
 
 // Optional type.

@@ -1,3 +1,8 @@
+// 文件功能：实现引脚的名称、方向、所属实例/线网、弧及相邻连接查询。
+// 【零基础阅读】沿 PinData 的关系查名称、方向、所属实例、线网、库引脚和弧。
+// 从某引脚到 Net 再到 allPins，可找到同信号其他端点，但还不知道导线路径。
+// 有的查询根据实例类别分支，端口引脚和普通单元引脚的命名/关联不同。
+// 物理坐标需另外查询 PhysicalDesign，不能拿逻辑对象地址当位置。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// instance/net 归属对象，index 型号内端点下标，boundary 模块边界标志，arcs 逻辑关联表。
+// 判断端口/普通单元后采用相应名字/库关联规则，再返回所问字段；不在此选接入格子。
 
 inline
 const std::string

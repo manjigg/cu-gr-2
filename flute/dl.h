@@ -1,3 +1,7 @@
+// 文件功能：定义双向链表节点/表头、操作函数和遍历/插入宏，供 FLUTE 构树辅助代码复用。
+// 【零基础阅读】双向链表像排队纸条，每项存前一项/后一项地址，不要求连续数组位置。
+// 表头存 first/last/count，插入删除时更新邻接指针而不是搬动所有后续元素。
+// 宏封装常见操作，反斜杠接多行定义；具体函数的实现看 dl.c。
 #ifndef DL_H
 #define DL_H
 
@@ -5,6 +9,7 @@
 #include <stdlib.h>
 
 typedef struct dl_el_s {
+  // prev/next 前/后元素地址；first/last 表头两端地址，count 已有元素数，不是存储字节数。
   struct dl_el_s *prev, *next;
 } dl_el;
 

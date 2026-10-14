@@ -1,3 +1,7 @@
+// 文件功能：声明特殊导线的路径、层和几何接口。
+// 【零基础阅读】此菜单读取特殊导线的既有路径与几何属性。
+// 一条路径含多个点、层/线宽等信息，才能还原占用区域。
+// 接口查询不修改路线，也不会自动把金属占用登记到 CUGR 的容量图。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSPECIALWIRE_H
 
 namespace Rsyn {
+// clsPhysicalLayer 层，clsWireWidth DBU 线宽，clsRoutingPoints 顺序路径点，各点可带过孔/延伸。
 class PhysicalSpecialWire : public Proxy<PhysicalSpecialWireData> {
 	friend class PhysicalDesign;
 	friend class PhysicalDesignData;
@@ -56,4 +61,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSPECIALWIRE_H */
-

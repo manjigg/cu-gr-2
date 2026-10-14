@@ -1,3 +1,7 @@
+// 文件功能：声明放置 site 的名称、尺寸和类型接口。
+// 【零基础阅读】查询放置基本座位的模板名称、尺寸与类型。
+// 尺寸为物理量，实例数量或网格下标是编号量，两种数字不可直接替代。
+// 型号级 site 可被多个行引用，代理只是共享查看其资料。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALSITE_H
 
 namespace Rsyn {
+// clsSize DBU 宽高，clsSiteClass 座位类别，clsSymmetry 对称性标志；类别不是长度。
 
 class PhysicalSite : public Proxy<PhysicalSiteData> {
 	friend class PhysicalDesign;
@@ -62,4 +67,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALSITE_H */
-

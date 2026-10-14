@@ -1,3 +1,7 @@
+// 文件功能：定义物理布线的导线、过孔、矩形和路径集合。
+// 【零基础阅读】物理路径由导线、过孔、额外矩形构成，不仅是一组逻辑引脚名字。
+// 导线保存点序列和线宽/端点延伸；过孔保存型号与放置位置；矩形保存局部金属区域。
+// 本文件声明元素和集合接口，.cpp 将中心线等信息转换成可用几何。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +26,9 @@
 #include "rsyn/util/Bounds.h"
 
 namespace Rsyn {
+// 【字段】导线 clsLayer 所在层、clsPoints 顺序 DBU 点表、clsWidth 线宽、clsSource/TargetExtension 端延伸。
+// 过孔 clsVia 型号、clsPosition DBU 放置点；额外矩形 clsRect DBU 形状、clsLayer 所属层。
+// 线宽/延伸默认 -1 指使用默认规则，不是负宽金属；hasNonDefault* 区分是否显式覆盖。
 
 class PhysicalLayer;
 class PhysicalVia;
@@ -229,4 +236,3 @@ private:
 
 
 #endif /* PHYSICALROUTING_H */
-

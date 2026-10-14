@@ -1,3 +1,7 @@
+// 文件功能：声明物理分组名称、成员和区域关联接口。
+// 【零基础阅读】此菜单用于查询分组名称、成员或区域关联。
+// 组是逻辑上的成员集合，约束区域是几何范围，不是把成员位置自动叠在一起。
+// 具体访问步骤在 impl，字段在 data；先理解返回对象种类再追实现。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALGROUP_H
 
 namespace Rsyn {
+// clsPatterns 成员文字匹配模式，clsRegion 关联区域代理；成员模式和实际对象列表不是一回事。
 
 class PhysicalGroup : public Proxy<PhysicalGroupData> {
 	friend class PhysicalDesign;
@@ -63,4 +68,3 @@ public:
 
 
 #endif /* PHYSICALDESIGN_PHYSICALGROUP_H */
-

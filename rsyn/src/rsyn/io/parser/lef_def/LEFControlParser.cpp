@@ -1,4 +1,11 @@
+// 文件功能：注册并实现 LEF 层、macro、引脚和障碍等回调，构建库/工艺中间描述。
+// 底层语法解析由静态 liblef 提供，描述对象随后交给 PopulateRsyn/PhysicalDesign。
+// 【零基础阅读】读取工艺层规则和零件型号资料，组织成 LefDscp 供数据库装配。
+// 回调拿到 lefiLayer/lefiMacro 等对象后查询字段，底层库已完成语法识别。
+// 先解析模板再读 DEF 实例，实际零件才能知道自己引用哪种尺寸和引脚几何。
 /* Copyright 2014-2018 Rsyn
+ * 模板/引脚名为对象关联键，库形状坐标为局部微米量，单位条目给转换尺度。
+ * has* 区分文件是否提供参数，num* 限制遍历已用项，不能按 *Allocated_ 遍历未用空间。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

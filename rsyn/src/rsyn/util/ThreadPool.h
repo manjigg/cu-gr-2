@@ -1,4 +1,10 @@
+// 文件功能：实现线程池的任务队列、工作线程调度、条件变量同步及等待全部任务完成。
+// 【零基础阅读】线程池像多个工人共享待办队列：加入任务，工人取任务，完成后继续取。
+// mutex 防同时修改队列，condition_variable 让没任务的工人等待，wait 等全部完成。
+// 工具存在不代表所有路由循环已并行，须看调用方有没有真正提交任务。
 /* Copyright 2014-2018 Rsyn
+ * workers 工作线程列表，queue_mutex 保护任务队列，condition 等任务，condition_wait_task 等全部完成。
+ * stop 停止标志，running 当前执行任务计数；等待不是忙循环，通知后线程再继续取任务。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

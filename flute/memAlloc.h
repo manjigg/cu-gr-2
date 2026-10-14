@@ -1,3 +1,7 @@
+// 文件功能：声明 FLUTE 数值数组分配、释放、运行错误和排序比较辅助接口。
+// 【零基础阅读】接口允许指定数组下标上下界，而不只固定从 0 开始。
+// 分配函数可能调整返回指针以适配下标，释放必须用对应 free_* 恢复实际地址。
+// 向量是一维，matrix 是二维，3D 是三维；数字类型不同有不同函数版本。
 /* --------------------------------------------------------------------------
    Public domain memory allocation and de-allocation routine header file.
    Taken from Appendix B of: 
@@ -6,6 +10,8 @@
 ----------------------------------------------------------------------------*/
 #ifndef _MEMALLOC_H_
 #define _MEMALLOC_H_
+// nl/nh 为向量低/高下标，nrl/nrh 为行范围，ncl/nch 为列范围，ndl/ndh 为第三维范围。
+// v/m/t 为需释放的向量/矩阵/张量地址；上下界用来恢复申请地址，不是几何边界。
 
 static float sqrarg;
 #define SQR(a) ((sqrarg=(a)) == 0.0 ? 0.0 : sqrarg*sqrarg)

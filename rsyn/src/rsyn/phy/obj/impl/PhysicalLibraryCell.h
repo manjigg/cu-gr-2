@@ -1,3 +1,7 @@
+// 文件功能：实现库单元尺寸、macro、引脚和障碍集合读取。
+// 【零基础阅读】从模板数据读取尺寸、macro 与引脚/障碍集合。
+// 多个实际实例共用同一物理库模板，但有各自放置位置和朝向。
+// 查询集合后需遍历每个几何对象，才能完整取得模板金属占用。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// clsSize 为型号尺寸，clsObs 局部障碍表；getMacro 返回原 LEF 模板对象，实例位置另查 PhysicalCell。
 
 inline lefiMacro* PhysicalLibraryCell::getMacro() const {
 	return data->clsMacro;

@@ -1,4 +1,9 @@
+// 文件功能：实现 parser_helper 中旧式格式的分词、逐记录读取和字段解析。
+// 【零基础阅读】实现读取行/拆词/转换数字/填记录等旧格式解析步骤。
+// 输入流按文本读取，不同解析函数服务不同记录，不能把全文件当成一条执行流程。
+// 看函数入口参数找到输入/输出，再看循环如何把每行追加到相应描述列表。
 /* Copyright 2014-2018 Rsyn
+ * token/line 为文本或词元，当前记录/列表为输出；先拆字段再转换，不能把所有数字都解释成 DBU。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

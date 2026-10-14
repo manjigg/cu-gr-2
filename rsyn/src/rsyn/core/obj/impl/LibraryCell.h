@@ -1,3 +1,8 @@
+// 文件功能：实现库单元的引脚/弧索引访问和库属性查询。
+// 【零基础阅读】按名称或编号取模板引脚/弧，读取库单元属性并提供集合遍历。
+// 库模板多处共享，因此查询一般只读；实际实例的连接不在这里修改。
+// 遍历器是当前位置的标记，begin/end 分别表示起点和终点之外的位置。
+// 阅读时把返回对象与 data 的相应集合对照，能理解编号怎样变成代理。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 保存 name/pins/arcs/size/tag，index 参数定位模板成员，计数字段用于分类数量查询。
+// 输入/输出信号分类与形状朝向不是同一枚举；位置信息由实际实例再提供。
 
 inline
 Design 

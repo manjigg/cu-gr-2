@@ -1,3 +1,7 @@
+// 文件功能：实现端口的位置、朝向、边界和工艺层读取。
+// 【零基础阅读】从端口记录读位置、朝向、层与边界，供外部接线口几何计算。
+// 端口几何与普通单元模板流程不同，CUGR Instance.cpp 专门处理它。
+// get* 方法不移动端口，只把导入阶段保存的资料取出。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// position/bounds DBU 位置/边界，orientation 姿态，clsPortLayer 层；端口不走普通库引脚下标链。
 // -----------------------------------------------------------------------------
 
 inline PhysicalLayer PhysicalPort::getLayer() const {
@@ -48,5 +53,3 @@ inline PhysicalOrientation PhysicalPort::getOrientation() const {
 // -----------------------------------------------------------------------------
 
 } // end namespace 
-
-

@@ -1,4 +1,9 @@
+// 文件功能：提供单精度二维向量的坐标访问、算术和几何辅助运算。
+// 【零基础阅读】float2 用两个单精度小数表示二维位置/向量，比 double2 精度低。
+// 算术运算按两坐标分别进行，名字只是数字类型，不自动解释芯片单位。
+// 它是通用几何积木，具体路由索引仍使用 CUGR GRPoint 的整数格子坐标。
 /* Copyright 2014-2018 Rsyn
+ * x/y 为单精度分量，rhs 另一向量，标量参数用于缩放；转 DBU 时需额外决定尺度与取整。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

@@ -1,3 +1,7 @@
+// 文件功能：实现特殊线网描述及导线集合读取，供 CUGR 提取固定障碍。
+// 【零基础阅读】访问特殊线网原始描述和导线集合，保留输入已有金属路径。
+// CUGR Design::read 用这些资料提取线段和过孔上下层障碍。
+// 这里返回描述引用，调用方遍历才逐个处理路径，不会自动扣减资源。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// getNet 返回特殊网的描述资料供遍历 wire/segment/point，与普通逻辑网 allPins 读法不同。
 
 inline const DefNetDscp & PhysicalSpecialNet::getNet() const { return data->clsNet; }
 

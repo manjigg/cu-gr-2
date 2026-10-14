@@ -1,3 +1,7 @@
+// 文件功能：实现物理实例的类型、位置、边界及关联代理读取。
+// 【零基础阅读】读取实际物理实例的通用位置、类型及边界，并提供关联访问。
+// 类型决定能否转成 PhysicalCell/Port 等专门对象，位置和尺寸要分别理解。
+// 代理返回共享数据视图，不是创建一个额外实例或重新放置单元。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +26,7 @@
 
 
 namespace Rsyn {
+// clsInstance 是逻辑关联，clsInitialPos 初始 DBU 点，clsPlaced/Block/Port 为类型/状态标志。
 
 // -----------------------------------------------------------------------------
 

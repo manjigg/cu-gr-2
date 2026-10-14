@@ -1,3 +1,7 @@
+// 文件功能：实现线宽/端点延伸处理、过孔访问、路径添加和导线多边形转换。
+// 【零基础阅读】根据路径点、线宽和端点延伸计算真实金属形状，再组织布线元素。
+// 中心线宽度为 0 的数学线不能表示占用，转换多边形时需向两侧扩半个线宽。
+// 这里只表示/处理已有物理路径，不运行 CUGR 的三阶段搜索。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +21,8 @@
 #include "PhysicalRouting.h"
 
 namespace Rsyn {
+// source/target 为导线两端，p0/p1 为用于确定延伸方向的点，extension 沿该方向的 DBU 长度。
+// polygon 输出有宽度形状，wire/via/rect 为路径元素；添加元素改路径列表，而非 CUGR demand。
 
 // -----------------------------------------------------------------------------
 // PhysicalRoutingWire

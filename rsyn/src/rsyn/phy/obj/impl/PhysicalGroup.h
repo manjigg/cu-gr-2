@@ -1,3 +1,7 @@
+// 文件功能：实现物理分组的成员和约束关联读取。
+// 【零基础阅读】按代理读取分组成员和约束关联，成员集合不是单个空间矩形。
+// 返回区域代理后可继续查询空间边界，再由调用方应用约束。
+// 内联查询是代码复用方式，不会在 include 时自动改变布局。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +30,7 @@
  * Created on 09 de Abril de 2017, 16:45
  */
 namespace Rsyn {
+// data->clsPatterns 返回名字模式表，clsRegion 返回区域代理；并不在 get 时重排/移动组成员。
 
 // -----------------------------------------------------------------------------
 
@@ -48,4 +53,4 @@ inline const std::vector<std::string> & PhysicalGroup::allPatterns() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

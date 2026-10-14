@@ -1,4 +1,15 @@
+// 文件功能：声明 LEF 工艺层的方向、线宽、面积、间距和并行间距表等规则接口。
+// CUGR MetalLayer 从此对象提取容量扣减与过孔代价所需规则。
+// 【零基础阅读】层对象像道路规则本：首选方向、线宽、最小面积、间距/并行表等。
+// lefiParallel 一类对象按线宽与并行长度组织间距，get 方法读取输入保存的规则。
+// LEF 的微米小数到 CUGR 会换成 DBU，单位转换在 MetalLayer 构造中完成。
 // *****************************************************************************
+// 【实际字段】width_/minwidth_/maxwidth_ 线宽量，area_ 最小面积，pitchX_/Y_ 轨距，offsetX_/Y_ 偏移。
+// hasWidth_/hasArea_/hasPitch_/hasDirection_ 标明文件提供项，不能仅由数值默认 0 判断。
+// numSpacings_/numSpacingTable_/numProps_ 已用规则/表/属性数；*Allocated_ 预留容量。
+// 并行表 numLength_/numWidth_ 是档位数，索引先宽度档再长度档，不是空间格子的 x/y。
+// resistance_/capacitance_/thickness_ 等是电气/工艺量；天线 antenna* 字段是专门规则，不是路径长度。
+// LEF 物理长度通常为微米小数，CUGR 构造 MetalLayer 时才换 DBU；面积乘尺度的平方。
 // *****************************************************************************
 // Copyright 2012 - 2015, Cadence Design Systems
 // 

@@ -1,4 +1,11 @@
+// 文件功能：注册并实现 DEF 对象回调，导入单元、端口、线网、轨道、网格和布线路径。
+// 底层语法解析由静态 libdef 提供，本文件负责把解析结果转成 Rsyn 描述对象。
+// 【零基础阅读】底层库识别 DEF 语法，本文件按事件读取实例/引脚/线网/轨道等对象。
+// 例如单元回调取名字、型号、位置、朝向，追加到 DefDscp 的临时记录。
+// 名字关联到真实逻辑/物理对象是在后续 PopulateRsyn/PhysicalDesign 加载步骤完成。
 /* Copyright 2014-2018 Rsyn
+ * 单元/端口/网回调取名字与几何/连接字段，desc/dscp 类描述接收结果；底层对象非 CUGR Net。
+ * 对路径先识别词元类型，再读取点/过孔/层/延伸，段的当前层会随过孔切换。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

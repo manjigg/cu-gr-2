@@ -1,4 +1,9 @@
+// 文件功能：声明 Rsyn 数据库持久化的保存/加载入口。
+// 【零基础阅读】声明按 key 读写可序列化对象的接口，像按档案名保存/取回资料。
+// Serializable 约定对象怎样与流交换字段，数据库负责按名字组织存取。
+// 当前 Database.cpp 仅占位，不能从声明存在就断言完整持久化已实现。
 /* Copyright 2014-2018 Rsyn
+ * key 记录名字，data 要读/写的 Serializable 对象；同名 data 在其他模块可能是指针，须看类型。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,4 +37,3 @@ public:
 } // end namespace
 
 #endif 
-

@@ -1,3 +1,7 @@
+// 文件功能：实现物理布线网格的轨道、层和空间属性读取。
+// 【零基础阅读】读取物理网格的层和轨道组织，是 Rsyn 输入几何的访问设施。
+// CUGR 另建 GridGraph 统计资源，二者名字相近但底层保存的量不同。
+// 内联方法从既有记录返回结果，不是每次查询都再建一遍网格。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +25,7 @@
  */
 
 namespace Rsyn {
+// clsSpacing.x/y 轨距 DBU，clsNumTracks[轴] 数量，clsTracks 组表，clsBottom/TopRoutingGrid 邻层关联。
 
 inline Rsyn::PhysicalLayer PhysicalRoutingGrid::getLayer() const {
 	return data->clsLayer;
@@ -230,4 +235,4 @@ inline DBUxy PhysicalRoutingGrid::getTrackMaxPosition(const PhysicalLayerDirecti
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

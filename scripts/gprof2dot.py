@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# 文件功能：将 gprof 等性能分析器的输出解析为调用图，再导出 Graphviz DOT 格式。
+# 实现分为图模型、各分析格式解析器、图裁剪/权重计算、DOT 写出和命令行处理。
+# 【零基础阅读】性能分析报告记录哪些函数耗时/调用谁，本工具把文字整理成图模型。
+# 节点是函数，边是调用关系，权重表达时间/次数，之后写成 Graphviz 的 DOT 文本。
+# 它不是芯片布线图；与路由器配合时帮助找“程序时间花在哪里”。
+# 先读主入口的格式选择，再追相应 parser 和 writer，其他格式解析器可后读。
 #
 # Copyright 2008-2017 Jose Fonseca
 #
@@ -101,6 +107,7 @@ class UndefinedEvent(Exception):
 
 
 class Event(object):
+    # name 统计项名，_null 空值，_aggregator 合并两统计值函数，_formatter 数值转展示文字函数。
     """Describe a kind of event, and its basic operations."""
 
     def __init__(self, name, null, aggregator, formatter = str):
@@ -153,6 +160,7 @@ totalMethod = 'callratios'
 
 
 class Object(object):
+    # events：“Event 对象->该统计项数值”字典，event 为查询键；不是芯片对象属性表。
     """Base class for all objects in profile which can store events."""
 
     def __init__(self, events=None):
@@ -188,6 +196,7 @@ class Object(object):
 
 
 class Call(Object):
+    # callee_id 被调用函数编号，ratio 调用占比，weight 绘图权重，events 继承统计值表。
     """A call between functions.
     
     There should be at most one call object for every pair of functions.
@@ -201,6 +210,8 @@ class Call(Object):
 
 
 class Function(Object):
+    # id 函数身份、name 函数名、module/process 归属、calls[callee_id] 出调用边。
+    # called 入调用统计、weight 绘图权重、cycle 所属递归环、filename 函数源文件。
     """A function."""
 
     def __init__(self, id, name):
@@ -262,6 +273,7 @@ class Function(Object):
 
 
 class Cycle(Object):
+    # functions 递归环成员集合；同环内函数并非一定同一源文件，也不表示金属线网有环。
     """A cycle made from recursive function calls."""
 
     def __init__(self):
@@ -279,6 +291,7 @@ class Cycle(Object):
 
 
 class Profile(Object):
+    # functions[函数编号] 全图节点字典，cycles 已检测递归环，统计事件表继承自 Object。
     """The whole profile."""
 
     def __init__(self):
@@ -305,6 +318,7 @@ class Profile(Object):
                     del function.calls[callee_id]
 
     def find_cycles(self):
+        # stack Tarjan 工作栈，data 按函数保存遍历状态，order 递增访问序号，cycles 最终环列表。
         """Find cycles using Tarjan's strongly connected components algorithm."""
 
         # Apply the Tarjan's algorithm successively until all functions are visited
@@ -325,6 +339,8 @@ class Profile(Object):
                     sys.stderr.write("\tFunction %s\n" % member.name)
 
     def prune_root(self, roots, depth=-1):
+        # roots 要保留的根节点，depth 最大调用深度；visited 已访问编号，frontier 待访问(编号,剩余深度)。
+        # node/node_depth 当前项，newNodes 未访问被调用者，subtreeFunctions 裁剪结果，newCalls 保留出边。
         visited = set()
         frontier = set([(root_node, depth) for root_node in roots])
         while len(frontier) > 0:

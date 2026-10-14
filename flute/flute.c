@@ -1,3 +1,10 @@
+// 文件功能：实现 FLUTE 查找表加载、低/中阶直角 Steiner 树生成、树合并与线长估计。
+// 输入二维引脚坐标，输出 Branch 数组表示的拓扑；高阶处理交由 flute_mst.c。
+// 【零基础阅读】先读预计算表，再按引脚坐标排序/分解，求直角 Steiner 树或估计线长。
+// Steiner 分叉点不是原始引脚，是为了多条连接共用部分线段而加入的位置。
+// 例如三个端点形成 T 形，可共享中间主干，通常比各端点两两独立连接短。
+// C 代码用数组/指针组织数据，malloc 申请空间，调用者/库配套逻辑负责释放。
+// 先看 readLUT/flute，再按调用追 flutes_LD/MD 和 merge 方法，比从头背全部函数易懂。
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -49,8 +56,12 @@ DTYPE wirelength(Tree t);
 void printtree(Tree t);
 void plottree(Tree t);
 
+// 从当前执行目录读取两张预计算表：线长候选向量和相应 Steiner 拓扑。
 void readLUT()
 {
+    // charnum[字符码] 为查表文本数字解码值，line 为行缓冲，linep 当前读位置，c 当前字符。
+    // fpwv/fprt 为线长向量/拓扑表文件句柄；d 度数，i/j/k/kk 遍历序号，ns/nn 候选/记录数量。
+    // LUT[d][group] 保存该度数/排序组的候选，numsoln[d][group] 是有效候选数，p 当前候选地址。
     unsigned char charnum[256], line[32], *linep, c;
     FILE *fpwv, *fprt;
     struct csoln *p;

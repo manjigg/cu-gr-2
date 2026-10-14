@@ -1,3 +1,7 @@
+// 文件功能：实现库引脚的边界和几何集合读取。
+// 【零基础阅读】返回库引脚的边界与形状组，坐标仍需与实例变换配合。
+// 整体边界覆盖所有形状，却不保证边界内每一点都有引脚金属。
+// 真正接入候选应依据具体矩形；这正是 CUGR 后续遍历几何的原因。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// clsPhysicalPinGeometries 为各组局部形状；clsLayerBound 是边界摘要，不能据此假定内部全被金属覆盖。
 
 // -----------------------------------------------------------------------------
 
@@ -83,4 +88,4 @@ inline PhysicalPinUse PhysicalLibraryPin::getUse () const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

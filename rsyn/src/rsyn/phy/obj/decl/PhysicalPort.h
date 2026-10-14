@@ -1,3 +1,7 @@
+// 文件功能：声明芯片端口的位置、朝向、层和边界接口。
+// 【零基础阅读】芯片端口像外部接线口，具有位置、朝向、层和形状。
+// 它不同于放置的标准单元，不一定走库单元模板的引脚查询路径。
+// CUGR 的 Instance 端口构造函数从这些字段算出可直接使用的芯片坐标矩形。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,7 @@
 
 
 namespace Rsyn {
+// position/bounds 为端口 DBU 位置/形状，orientation 为端口姿态，clsPortLayer 是所在金属层。
 
 class PhysicalPort : public PhysicalInstance {
 	friend class PhysicalDesign;
@@ -57,4 +62,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALPORT_H */
-

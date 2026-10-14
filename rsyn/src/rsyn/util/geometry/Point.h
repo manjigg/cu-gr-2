@@ -1,4 +1,9 @@
+// 文件功能：定义通用几何点类型，供矩形、多边形和布线路径表示使用。
+// 【零基础阅读】Point 是几何上的一个位置，由两个坐标描述，不表示有宽度的导线。
+// 矩形/多边形用点组织形状，路径用点组织中心线，用途由持有者决定。
+// 先读构造和坐标查询，再看算术/转换接口，注意它使用的具体数值类型。
 /* Copyright 2014-2018 Rsyn
+ * 点的两分量为几何位置，另一点/位移参数为计算对象；点无宽高，不能替代导线面积。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,4 +80,3 @@ BOOST_GEOMETRY_REGISTER_POINT_2D_GET_SET(Rsyn::Point, DBU,
 		boost::geometry::cs::cartesian, getX, getY, setX, setY);
 
 #endif
-

@@ -1,4 +1,10 @@
+// 文件功能：实现 MD5 消息摘要，包括分块更新、最终摘要计算和字符串表示。
+// 【零基础阅读】MD5 将任意长度数据压成固定长度摘要，便于识别内容变化。
+// update 分块接收字节，finalize 完成补位/计算，摘要可转成文字打印。
+// 摘要不是路径求解结果，也不应把它的数字解释成芯片坐标。
 /* Copyright 2014-2018 Rsyn
+ * finalized 是否已计算最终摘要；输入 buffer/长度是一批字节，bits 是补位用的位长编码。
+ * 字符 buf 保存十六进制摘要文字，与整数状态摘要不同；分块更新后才能 finalize。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

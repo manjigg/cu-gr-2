@@ -1,3 +1,7 @@
+// 文件功能：实现引脚单层形状和工艺层读取。
+// 【零基础阅读】实现单层引脚形状的 has*/all* 查询与层访问。
+// 先判断是否提供矩形，再遍历矩形，避免拿不适用的几何形式强行当矩形。
+// 读到的形状由后续实例变换和网格映射转换为 GRNet 的候选位置。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +29,7 @@
  * Created on 18 de Setembro de 2016, 08:46
  */
 namespace Rsyn {
+// clsBounds/clsPolygons 分别为矩形/多边形表，clsLibLayer 是所属层；has* 查询决定哪种表适用。
 
 inline const std::vector<Bounds> & PhysicalPinLayer::allBounds() const {
 	return data->clsBounds;
@@ -86,4 +91,4 @@ inline bool PhysicalPinLayer::hasLayer() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

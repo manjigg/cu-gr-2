@@ -1,4 +1,9 @@
+// 文件功能：声明可序列化对象的公共接口，约定对象与序列化流之间的数据读写。
+// 【零基础阅读】纯虚函数 =0 约定派生对象必须实现怎样从流读/往流写自己的字段。
+// 序列化是把内存资料变成可存储格式，反序列化是重新装回对象。
+// 本文件只定义协议，不提供每类设计对象的完整读写实现。
 /* Copyright 2014-2018 Rsyn
+ * stream 输入/输出序列化介质；read/write 为纯虚协议，具体字段顺序由派生实现规定。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,4 +32,3 @@ public:
 }
 
 #endif /* SERIALIZABLE_H */
-

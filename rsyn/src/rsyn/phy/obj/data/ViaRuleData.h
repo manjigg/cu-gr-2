@@ -1,3 +1,7 @@
+// 文件功能：保存过孔规则的层、尺寸、间距与包围参数。
+// 【零基础阅读】规则像“怎样做一种过孔”的配方，而 Via 是具体可用过孔描述。
+// 配方中的层、切孔宽高、间距和包围决定金属/切孔几何是否满足要求。
+// 记录规则本身不表示在芯片某位置放了一只过孔；位置在实际路由数据里。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +29,10 @@
 
 
 namespace Rsyn {
+// clsIsDefault/IsGenerate 规则标志，clsHasCutResistance/HasWidth[部位] 可选参数提供标志。
+// clsRelativeIndex 规则编号，clsName 规则名，clsLayers[底/切/顶] 层地址。
+// clsLayerDirection[底/顶] 方向，clsWidth[底/顶][低/高] DBU 线宽区间；clsEnclosure1/2[部位] 包围量。
+// clsCutBounds 切孔矩形，clsCutSpacing[x/y] 孔间隔，clsCutResistance 电阻，clsVias 关联过孔列表。
 
 class ViaRuleData : public PhysicalObject {
 public:
@@ -68,4 +76,3 @@ public:
 
 } // end namespace 
 #endif /* RSYN_DATABASE_VIARULE_H */
-

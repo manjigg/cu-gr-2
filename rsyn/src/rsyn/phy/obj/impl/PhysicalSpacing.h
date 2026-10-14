@@ -1,3 +1,7 @@
+// 文件功能：实现工艺间距条目的规则参数读取。
+// 【零基础阅读】读取工艺间距条目的参数，以便调用者知道适用的空间要求。
+// 要求值与实际测到距离不同，满足规则需由几何计算比较两者。
+// 本文件提供现有记录访问，不执行最终详细布线的整套规则检查。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +24,7 @@
  */
 
 namespace Rsyn {
+// clsLayer1/2 关联层，clsDistance DBU 规则要求；测当前几何是否满足要求是调用方工作。
 
 inline PhysicalLayer PhysicalSpacing::getLayer1() const {
 	return data->clsLayer1;
@@ -39,4 +44,4 @@ inline DBU PhysicalSpacing::getDistance() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

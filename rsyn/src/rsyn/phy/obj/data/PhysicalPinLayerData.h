@@ -1,3 +1,7 @@
+// 文件功能：保存引脚单层的矩形/多边形形状与层引用。
+// 【零基础阅读】本记录描述一个引脚在某层上的金属形状，不一定只有一个矩形。
+// layer 是所属工艺层，形状集合是平面范围；不能仅凭平面范围判断跨层连通。
+// CUGR 当前模板提取主要使用矩形边界，是否支持其他形状要看调用方筛选条件。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,8 @@
 
 
 namespace Rsyn {
+// clsBounds 为 DBU 矩形列表，clsPolygons 多边形列表，clsLibLayer 所属工艺层。
+// 两列表保存不同形状形式，查询先判断 has*，不能一概视为矩形。
 
 class PhysicalPinLayerData : public PhysicalObject {
 public:
@@ -43,4 +49,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALPINLAYERDATA_H */
-

@@ -1,4 +1,10 @@
+// 文件功能：提供高精度秒表的启动、停止、重置及耗时统计。
+// 【零基础阅读】秒表记录开始时刻，结束时减开始时刻得到耗时。
+// start/stop/reset 改计时状态，elapsed 一类查询读累计时间，不影响任务结果。
+// 静态平台时钟细节是实现手段，先读公开方法就能理解如何测一个步骤的时间。
 /* Copyright 2014-2018 Rsyn
+ * clsRunning 是否正在计时，clsElapsedTime 已累计秒数；时刻与持续时间不是同一种量。
+ * start/stop 切状态并更新累计，reset 清累计；系统时钟中间变量仅用于平台时间换算。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

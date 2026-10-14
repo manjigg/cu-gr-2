@@ -1,4 +1,10 @@
+// 文件功能：声明序列化流的值、集合和网表对象读写接口，约定对象引用按 id 恢复。
+// 【零基础阅读】流接口约定数字、列表和对象引用怎样传输，具体格式不由这些原型说明。
+// 内存引用是地址，持久存储需按对象 id 保存，加载后再把 id 对应回真实对象。
+// 否则把一次运行的地址写入文件，下次运行该地址可能已不再指向同一资料。
 /* Copyright 2014-2018 Rsyn
+ * value 输入/输出值，T 指类型，instance/net/pin/arc 等为待序列化逻辑代理，不是坐标。
+ * 对象引用按 id 暂存、全库加载后再恢复地址，文件中的旧地址不能直接用于新一次运行。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,4 +78,3 @@ private:
 }
 
 #endif /* SERIALIZATIONSTREAM_H */
-

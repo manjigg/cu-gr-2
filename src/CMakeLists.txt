@@ -1,3 +1,11 @@
+# 文件功能：配置 C++14 route 可执行文件，汇总 CUGR、Rsyn 和 FLUTE 源码并链接依赖。
+# 构建路径：收集源文件 -> 设置头文件路径 -> 链接静态 LEF/DEF、Boost 和线程库。
+# 【白话职责】这是“怎样把源码做成可执行程序”的配方，不是运行时的布线步骤。
+# CMake 先读配方生成构建规则，编译器将各 .cpp/.c 编成目标文件，链接器再拼成 route。
+# set 给变量赋值，file(GLOB_RECURSE ...) 收集目录里的源文件，include_directories 告诉
+# 编译器去哪里找 #include 的头文件，target_link_libraries 告诉链接器需要哪些库。
+# .h 通常由 #include 带入编译，不需要逐个列成独立可执行源文件。
+# PATH_RSYN/PATH_FLUTE/PATH_CUGR 是三部分源码的位置，最后编进同一个 route。
 #########
 # Setup #
 #########
@@ -21,6 +29,9 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 
 set(CMAKE_CXX_STANDARD 14)
+# CMAKE_CXX_STANDARD 指 C++ 语言版本，不是线程数；PATH_* 为三个源码根目录。
+# SRC_FILES_* 是源文件清单，SRC_FILES 是合并清单；Boost_INCLUDE_DIR/LIBRARIES 为依赖搜索结果。
+# CMAKE_BINARY_DIR 输出构建目录，EXECUTABLE_OUTPUT_PATH 最终程序位置，不是 guide 输出路径。
 
 set(PATH_RSYN ${CMAKE_CURRENT_SOURCE_DIR}/../rsyn)
 set(PATH_FLUTE ${CMAKE_CURRENT_SOURCE_DIR}/../flute)

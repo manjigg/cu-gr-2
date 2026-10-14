@@ -1,4 +1,10 @@
+// 文件功能：定义 DEF 中间描述结构，表达实例、线网、路径、轨道和网格等导入数据。
+// 【零基础阅读】描述结构是解析后的临时表格，保存 DEF 实例、线网、轨道/路径等字段。
+// 它还不是最终 Rsyn 代理对象，PopulateRsyn/PhysicalDesign 会据此建立关联。
+// cls* 是字段命名习惯，vector 保存重复记录，bool 标志说明可选属性是否提供。
 /* Copyright 2014-2018 Rsyn
+ * clsName/LayerName 为文字键，clsPos 位置、clsRoutedWidth 线宽、clsExtension 延伸为 DBU。
+ * clsHasVia/HasExtension 等可选标志先判断，clsRoutingPoints/clsWireSegments 为按层级/顺序记录表。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -320,4 +326,3 @@ public:
 // -----------------------------------------------------------------------------
 
 #endif /* DEFDESCRIPTORS_H */
-

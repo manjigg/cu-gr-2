@@ -1,3 +1,7 @@
+// 文件功能：声明生成式过孔的切孔、间距、包围与层规则接口。
+// 【零基础阅读】生成式配方规定切孔宽高、孔间距离、上下层金属包围等参数。
+// 选择行列数量后可据这些参数构造过孔阵列几何，不是随便画一个点就完成换层。
+// 接口提供工艺参数，具体位置/行列生成由调用方或过孔对象决定。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,7 @@
 #define RSYN_DATABASE_PHYSICALVIAGENERATE_H
 
 namespace Rsyn {
+// clsWidth[部位][低/高] DBU 区间，clsCutSpacing[轴] 孔距，clsEnclosure1/2[底/顶] 包围量。
 
 class PhysicalViaRuleGenerate : public PhysicalViaRuleBase {
 	friend class PhysicalDesign;
@@ -63,4 +68,3 @@ private:
 } // end namespace 
 
 #endif /* PHYSICALVIAGENERATE_H */
-

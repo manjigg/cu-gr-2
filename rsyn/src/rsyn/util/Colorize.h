@@ -1,4 +1,9 @@
+// 文件功能：将数值比例映射成颜色，提供科学可视化的色带插值。
+// 【零基础阅读】数值色带像温度图：比例小和大显示不同颜色，中间值插值过渡。
+// 插值按权重混合通道，让连续变化不只用两种离散颜色表达。
+// 本工具只生成显示颜色，实际资源余额由 GridGraph 等使用方计算。
 /* Copyright 2014-2018 Rsyn
+ * 归一化比例定位色带位置，两端颜色用于插值；通道值是展示结果，不等于物理容量。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,4 +117,3 @@ public:
 };
 
 #endif
-

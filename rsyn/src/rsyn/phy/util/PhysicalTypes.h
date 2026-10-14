@@ -1,4 +1,9 @@
+// 文件功能：定义物理层类型、轨道/GCell 方向和过孔层级等公共枚举。
+// 【零基础阅读】枚举把层类型、方向和过孔层级的整数编号取成有意义的名字。
+// ROUTING/CUT 是层用途，HORIZONTAL/VERTICAL 是几何方向，TOP/BOTTOM 是过孔部位。
+// 这些名字服务不同分类，不能仅因底层都是整数就随意互换。
 /* Copyright 2014-2018 Rsyn
+ * enum 常量分别命名层类别/轨道方向/GCell 方向/过孔部位；相同整数在不同枚举下含义不同。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -334,4 +339,3 @@ enum PhysicalEventType {
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALTYPES_H */
-

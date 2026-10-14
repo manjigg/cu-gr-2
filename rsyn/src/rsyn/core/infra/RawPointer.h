@@ -1,4 +1,9 @@
+// 文件功能：集中提供网表代理与底层数据指针之间的转换入口，供内部基础设施使用。
+// 【零基础阅读】代理像访问钥匙，底层指针是实际资料的地址；此处集中做两者转换。
+// 地址不是芯片坐标，转换也不表示复制/重新创建实例。
+// 内部基础设施需要直接数据时使用这条桥梁，普通调用方优先用公开查询接口。
 /* Copyright 2014-2018 Rsyn
+ * 原始指针是档案地址，代理是访问句柄；转换不改变对象 id，也不会产生新的物理实例。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,4 +59,3 @@ public:
 } // end namespace
 
 #endif /* RAWPOINTER_H */
-

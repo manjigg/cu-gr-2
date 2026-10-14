@@ -1,3 +1,7 @@
+// 文件功能：实现裸片边界和尺寸读取。
+// 【零基础阅读】从裸片数据返回整体芯片边界/尺寸，供布局和网格生成使用。
+// 左下角与右上角相减得到长宽，坐标不是格子下标。
+// 本方法只查询范围，CUGR 后续才把范围划成 GCell。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +31,7 @@
  */
 
 namespace Rsyn {
+// data->clsBounds 为裸片范围；width/height 是 DBU 边界差，不是 GCell 数量。
 
 inline DBUxy PhysicalDie::getCoordinate(const Boundary bound) const {
 	return data->clsBounds[bound];
@@ -71,5 +76,3 @@ inline DBU PhysicalDie::getArea() const {
 // -----------------------------------------------------------------------------
 
 } // end namespace 
-
-

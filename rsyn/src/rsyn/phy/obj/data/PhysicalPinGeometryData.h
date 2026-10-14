@@ -1,3 +1,7 @@
+// 文件功能：保存引脚几何组的多层形状和属性。
+// 【零基础阅读】Geometry 是一个引脚形状组，一个组里可包含几个金属层的形状。
+// 层集合继续指向 PhysicalPinLayer 数据，后者才给出某层的具体矩形/多边形。
+// 阅读关系按“库引脚 -> 几何组 -> 单层 -> 矩形”顺着走，就不会把层级看混。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +34,7 @@
 #define PHYSICALDESIGN_PHYSICALPINGEOMETRYDATA_H
 
 namespace Rsyn {
+// clsPinPortClass 形状组类别，clsPinLayers[i] 本组第 i 个层形状对象，不是第 i 根导线。
 
 class PhysicalPinGeometryData : public PhysicalObject {
 public:
@@ -48,4 +53,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALPINGEOMETRYDATA_H */
-

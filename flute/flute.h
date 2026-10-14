@@ -1,3 +1,10 @@
+// 文件功能：定义 FLUTE 的精度/分支参数、Branch/Tree 数据类型和 Steiner 树/线长计算接口。
+// 小度数使用 POWV9/POST9 查表，中高阶通过分解和 MST 辅助构树；由 PatternRoute 调用。
+// 【零基础阅读】FLUTE 给几个二维接线位置找较短的直角连接树，允许增加共享分叉点。
+// Branch 存一个点和相邻分支编号 n，Tree 存点数/线长/分支数组地址。
+// typedef struct 给数据结构命名，#define ACCURACY 是编译时的精度配置。
+// LUT 是预计算查找表，小规模问题直接查表，大规模需要拆成小问题再合并。
+// 它只解决初始平面拓扑，不知道 CUGR 当前各金属层已有的拥塞需求。
 #pragma once
 /*****************************/
 /*  User-Defined Parameters  */
@@ -38,12 +45,14 @@
 
 typedef struct
 {
+    // Branch：x/y 为二维坐标（CUGR 传格子索引），n 为邻接分支数组下标，非点数。
     DTYPE x, y;   // starting point of the branch
     int n;   // index of neighbor
 } Branch;
 
 typedef struct
 {
+    // Tree：deg 原端点度数，length 整棵二维树线长，branch 分支数组地址，数量通常为 2*deg-2。
     int deg;   // degree
     DTYPE length;   // total wirelength
     Branch *branch;   // array of tree branches

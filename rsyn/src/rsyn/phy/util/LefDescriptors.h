@@ -1,4 +1,9 @@
+// 文件功能：定义 LEF 库/工艺中间描述结构，用于构建逻辑库和物理库。
+// 【零基础阅读】本文件定义 LEF 库/工艺的临时描述，供解析器先装入读取结果。
+// 模板名、引脚属性和工艺信息接着被填充到逻辑库及物理库。
+// 先解析再建立数据库关联是两个步骤，记录里文字名称此时还不一定对应代理对象。
 /* Copyright 2014-2018 Rsyn
+ * 库名字是型号关联键，方向/用途为分类，库形状小数按 LEF 单位解读；导入后才归一化 DBU。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -292,4 +297,3 @@ public:
 // -----------------------------------------------------------------------------
 
 #endif /* PHYSICALDESCRIPTORS_H */
-

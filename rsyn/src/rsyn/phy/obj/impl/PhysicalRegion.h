@@ -1,3 +1,7 @@
+// 文件功能：实现物理区域名称、类型和边界集合读取。
+// 【零基础阅读】返回区域名字、类别和边界集合，供约束使用方判断空间范围。
+// 一个区域可以有多个矩形，不能仅按第一个矩形就代表整个区域。
+// 数据查询和算法应用约束是两步，这里不负责改变信号路线。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +30,7 @@
  * Created on 09 de Abril de 2017, 14:55
  */
 namespace Rsyn {
+// clsBounds[i] 第 i 个区域矩形，name 名称键，type 区域类别；不是候选路线编号。
 
 // -----------------------------------------------------------------------------
 
@@ -53,4 +58,4 @@ inline std::size_t PhysicalRegion::getNumBounds() const {
 
 // -----------------------------------------------------------------------------
 
-} // end namespace 
+} // end namespace

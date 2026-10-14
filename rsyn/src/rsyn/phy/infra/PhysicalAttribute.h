@@ -1,4 +1,9 @@
+// 文件功能：实现逻辑对象到物理数据的泛型属性映射。
+// 【零基础阅读】属性映射给逻辑对象附一份物理资料，类似按学生编号查体检档案。
+// 模板参数指定对象/数据种类，索引关联避免把所有物理字段塞进逻辑类。
+// 访问逻辑对象时查这张映射，就能取得其物理记录；它不是复制一条新信号线网。
 /* Copyright 2014-2018 Rsyn
+ * 对象模板类型指定关联键，物理数据类型指定值；id/index 定槽，data 为附加记录而非位置。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -330,4 +335,3 @@ const RsynPhysicalObjectExtension &PhysicalAttribute<RsynPhysicalObject, RsynPhy
 
 
 #endif
-

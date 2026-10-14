@@ -1,3 +1,8 @@
+// 文件功能：实现库引脚的名称、方向、用途及所属对象访问。
+// 【零基础阅读】getName/getDirection/getUse 一类方法直接返回模板引脚的逻辑属性。
+// 这些属性是名字、类别和所属型号，不是 DBU 矩形坐标。
+// data->... 是借用底层数据；const 方法保证查询不修改代理所提供的状态接口。
+// CUGR 导入时利用模板名/引脚名把实际连接映射到自己的简化编号。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data->name/direction/pinUse/index/lcell 分别为引脚名/信号方向/用途/型号内编号/所属型号。
+// 返回编号可以作为型号引脚表下标，不是所有实例引脚集合的通用 id。
 
 inline
 Design 

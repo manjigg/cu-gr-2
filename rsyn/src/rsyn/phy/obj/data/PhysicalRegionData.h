@@ -1,3 +1,7 @@
+// 文件功能：保存物理区域的名称、类型和边界约束。
+// 【零基础阅读】Region 是布局约束区域，其边界可由多个矩形描述。
+// 名称便于对象引用它，类型说明约束类别，边界说明空间范围。
+// 存下区域并不自动改变路线；使用方必须查询并决定如何应用约束。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +35,7 @@
 
 
 namespace Rsyn {
+// clsBounds[i] 区域第 i 块 DBU 矩形，多块共同描述区域，包围盒不保证其内全部都是有效区域。
 
 class PhysicalRegionData : public PhysicalObject {
 public:
@@ -44,4 +49,3 @@ public:
 } // end namespace 
 
 #endif /* PHYSICALDESIGN_PHYSICALREGIONDATA_H */
-

@@ -1,4 +1,9 @@
+// 文件功能：声明旧式输入格式的解析助手和记录类型，覆盖库、网表、布局等文本数据。
+// 【零基础阅读】声明历史格式的记录与解析助手，负责将文本字段转成结构化资料。
+// 分词是把一行拆成字段，记录解析是给字段解释名字/数字/连接的意义。
+// 文件较长来自支持多种格式，当前入口用哪些接口要追读取器调用链。
 /* Copyright 2014-2018 Rsyn
+ * 输入流提供文字行，词元列表存拆分字段，数值记录为转换输出；迭代号不是物理位置。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

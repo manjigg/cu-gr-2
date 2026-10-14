@@ -1,3 +1,8 @@
+// 文件功能：保存库单元的名称、引脚、弧和相关属性，供实例复用。
+// 【零基础阅读】库单元是零件型号的逻辑定义，保存它有哪些引脚与内部弧。
+// 与物理库单元不同，本层重点是逻辑关系；尺寸/引脚矩形在 phy 模块保存。
+// 列表下标可定位引脚/弧，名称索引便于由 "A"/"Y" 找到对应模板引脚。
+// 此处定义存储格式，实际创建模板和建立关系由设计导入流程完成。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// 【字段】name 型号名，pins/arcs 模板端点/弧列表，size.x/y DBU 宽高，tag 型号标签。
+// numInputPins/numOutputPins/numInOutPins 是输入/输出/双向引脚数量，而非某个引脚编号。
 
 struct LibraryCellTagData {
 	LogicTypeTag logicType : 2;

@@ -1,3 +1,7 @@
+// 文件功能：保存按工艺层组织的过孔管理数据。
+// 【零基础阅读】过孔把不同金属层接通；管理器按层保存相关数据，减少反复全表查找。
+// 此文件是管理器的资料柜，decl 定义怎么查询，impl 实现如何取出结果。
+// 金属层编号与过孔编号是不同索引，关联数据负责把它们对应起来。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +28,8 @@
 #define PHYSICALLAYERVIAMANAGERDATA_H
 
 namespace Rsyn {
+// clsVias[层] 相关过孔列表，clsBottomVias/clsTopVias[层] 按过孔底/顶金属关联分组。
+// key 是层代理，value 是过孔代理列表，不是“整数下标->单一过孔”。
 
 class LayerViaManagerData : public PhysicalObject {
 public:
@@ -37,4 +43,3 @@ public:
 
 
 #endif /* PHYSICALLAYERVIAMANAGERDATA_H */
-

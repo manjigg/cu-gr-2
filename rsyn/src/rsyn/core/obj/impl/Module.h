@@ -1,3 +1,8 @@
+// 文件功能：实现模块内实例/线网遍历、名称查询与拓扑相关操作。
+// 【零基础阅读】这里从模块集合中查实例/线网，构造遍历范围及拓扑相关查询。
+// 顶层模块所有 Net 是导入器的信号连接来源；遍历所有实例则得到实际单元/端口。
+// 容器下标和对象 id 不应未经检查就认为是同一个数字，按方法的映射来读。
+// 本层组织网表集合，路线优化与拥塞图仍在 CUGR 的 src/gr 中。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data 关联模块成员集合，instance/net/port 是每次取出的代理，name 是查询文字键。
+// all* 构造遍历范围，begin/end 是迭代位置，只有调用方 for 才处理各成员。
 
 inline
 Design 

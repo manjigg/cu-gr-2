@@ -1,4 +1,10 @@
+// 文件功能：定义 DBU 矩形边界，提供尺寸、相交、包含和坐标平移等操作。
+// 【零基础阅读】Bounds 用左下/右上两个角描述轴对齐矩形，宽高由两角相减。
+// translate 给两角加同一位移，形状大小不变；相交/包含则比较区间范围。
+// DBU 表示物理整数坐标，不能直接当成 CUGR 的格子编号使用。
 /* Copyright 2014-2018 Rsyn
+ * 变量读法：lower/upper 为 DBU 左下/右上点，dimension 是 0=x/1=y；位移参数加到两端。
+ * 宽高=upper-lower，边界数组下标是低/高与轴的选择，不是另一组格子坐标。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -264,4 +270,3 @@ public:
 
 
 #endif
-

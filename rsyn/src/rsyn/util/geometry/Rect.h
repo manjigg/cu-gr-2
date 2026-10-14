@@ -1,4 +1,9 @@
+// 文件功能：声明矩形几何对象的坐标、尺寸和边界操作接口。
+// 【零基础阅读】矩形是位置+宽高/边界表示的区域，区别于只有位置的点。
+// getX/getY/getWidth/getHeight 一类方法读取各组成量，Bounds 可用于边界表示。
+// 方法菜单在这里，具体构造/转换细节在 Rect.cpp。
 /* Copyright 2014-2018 Rsyn
+ * x/y 为位置，width/height 为跨度，Bounds 为两角范围；尺寸和高端坐标需分别理解。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,4 +130,3 @@ private:
 BOOST_GEOMETRY_REGISTER_BOX(Rsyn::Rect, Rsyn::Point, getLower(), getUpper());
 
 #endif
-

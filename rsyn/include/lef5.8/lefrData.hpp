@@ -1,4 +1,13 @@
+// 文件功能：声明 LEF 解析器内部状态、词法数据和临时解析对象。
+// 【零基础阅读】保存读取当前位置、临时对象与解析状态，像读文件的工作台。
+// 数据用于解析器识别语法，不是芯片最终网表或物理路线树。
+// 外部通常调用 lefrReader，内部状态由底层库维护。
 // *****************************************************************************
+// 【状态变量】current_token 当前词元，pv_token 前值，uc_token 大写处理缓冲，current_buffer 输入缓冲。
+// lef_nlines/lef_ntokens 已读行/词元数，lef_errors/lef_warnings 错误/警告数，versionNum 输入版本。
+// has* 是否读到语法项；layerRout/layerCut 等是当前层类别状态；numVia 是解析计数。
+// *Warnings 按语法类统计警告，msgLimit[消息类][编号] 限制输出，Hist_text 保留历史。
+// 名字中的 lef 说明服务 LEF 读取，这些状态不是 CUGR 的导线/过孔资源需求。
 // *****************************************************************************
 // Copyright 2012 - 2014, Cadence Design Systems
 // 
@@ -304,4 +313,3 @@ extern lefrData *lefData;
 END_LEFDEF_PARSER_NAMESPACE
 
 #endif
-

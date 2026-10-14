@@ -1,4 +1,10 @@
+// 文件功能：定义范围包装和反向集合等迭代适配器，支持 range-for 形式访问自定义集合。
+// 【零基础阅读】Range 包装起止迭代器，BackwardsCollection 提供反向遍历视角。
+// 包装不复制所有元素，只规定 for 循环怎样逐项取得元素。
+// 迭代器是集合内位置，不是网格点坐标；使用时需遵守集合修改约定。
 /* Copyright 2014-2018 Rsyn
+ * 迭代器保存集合当前位置，begin/end 为起点/尾后；反向集合只改变访问方向，不复制元素。
+ * 模板类型决定元素/迭代器形式；下标、迭代位置与物理坐标须分开理解。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,4 +164,3 @@ public:
 }; // end class
 
 #endif
-

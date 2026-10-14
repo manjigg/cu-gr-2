@@ -1,4 +1,13 @@
+// 文件功能：声明 DEF 解析器的内部状态、临时对象和解析上下文。
+// 【零基础阅读】解析器要记当前读到哪里、临时对象和词法/语法状态，本文件声明这些资料。
+// 这是读文件的工作空间，不是芯片的容量图或最终路线树。
+// context 把一次解析所需状态组织起来，公开读入口在 defrReader.hpp。
 // *****************************************************************************
+// 【状态变量】integer/dval/string 是词元解析值；save_x/save_y 是暂存坐标，nlines 读入行数。
+// VersionNum 输入版本；netOsnet 当前普通/特殊网段类别；ntokens 词元计数，buffer 输入文字缓冲。
+// *Warnings 各语法项警告计数，errors 错误数，defMsgPrinted 已打印消息数，msgLimit 消息上限。
+// *_is_keyword 决定当前位置是否把文字识别为关键字；has* 记录是否读到可选语法项。
+// History_text 保留输入历史，stack 是解析上下文栈；这些数字不能解释成芯片网格资源。
 // *****************************************************************************
 // Copyright 2013 - 2015, Cadence Design Systems
 // 
@@ -304,4 +313,3 @@ defrData::checkErrors()
 END_LEFDEF_PARSER_NAMESPACE
 
 #endif
-

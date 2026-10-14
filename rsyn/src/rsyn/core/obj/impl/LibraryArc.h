@@ -1,3 +1,8 @@
+// 文件功能：实现库弧的端点及所属库单元访问，读取对应 LibraryArcData。
+// 【零基础阅读】方法沿 LibraryArcData 的关联取出库弧端点/归属。
+// 端点是库引脚模板，不是某个单元实例上的实际引脚。
+// 返回代理可继续点号查询；不需调用者直接管理底层数据内存。
+// inline 方法通常较短，重点是读清每个返回值来自哪个字段。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +19,8 @@
  */
  
 namespace Rsyn {
+// data->from/to 返回两个库引脚，data->lcell 返回型号；index 仅在该型号弧表范围内。
+// inline 函数仅在调用时执行，不会在 include 时预先遍历所有库弧。
 
 inline
 Design 

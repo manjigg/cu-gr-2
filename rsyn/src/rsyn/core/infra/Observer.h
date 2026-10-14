@@ -1,4 +1,9 @@
+// 文件功能：定义设计观察者回调接口，在实例/线网/引脚发生变更时通知依赖服务。
+// 【零基础阅读】观察者是“发生变更后通知我”的接口，服务可实现相应回调。
+// 比如实例变更后物理资料需要更新，通知让依赖模块知道何时刷新。
+// virtual 表示允许派生观察者提供自己的响应；接口不固定一种算法行为。
 /* Copyright 2014-2018 Rsyn
+ * 回调的实例/网/引脚参数指出发生事件的对象，事件类型选择响应，参数不是新建对象指令。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,4 +76,3 @@ public:
 } // end namespace
 
 #endif
-

@@ -1,3 +1,8 @@
+// 文件功能：实现实例的类型转换、属性/位置访问、引脚查询和遍历。
+// 【零基础阅读】实现实例类型判断、派生代理转换及成员引脚/位置等访问。
+// 转换为 Cell/Port 是按已有类型换访问方式，不是复制或搬动一个实例。
+// all* 遍历接口包装现有集合，调用者随后用 for 才逐个处理对象。
+// 若方法修改属性/状态，应同时观察它是否触发设计通知或更新相关索引。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +21,8 @@
 #include <limits>
 
 namespace Rsyn {
+// data 保存实例 type/关联/端点，lcell 指向型号；pin 当前遍历端点，direction 信号类别。
+// asCell/asPort 切访问方式而非复制实例；set* 改字段，get* 取已有资料。
 
 inline
 DesignData *

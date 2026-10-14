@@ -1,3 +1,7 @@
+// 文件功能：实现物理模块的空间及实例关联访问。
+// 【零基础阅读】实现物理模块代理对其空间/关联资料的访问。
+// :: 指明方法属于哪个类型，data 指向已由设计管理的实际记录。
+// 同名逻辑 Module 与物理代理配合，一个回答成员连接，一个回答空间资料。
 /* Copyright 2014-2018 Rsyn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,4 +31,5 @@
  */
 
 namespace Rsyn {
+// data 是本代理底层地址，方法返回空间/逻辑关联；此处没有普通导线 demand 更新。
 } // end namespace 

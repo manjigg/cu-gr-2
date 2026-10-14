@@ -1,4 +1,9 @@
+// 文件功能：定义线条与填充的图案掩码枚举，供图形显示样式使用。
+// 【零基础阅读】图案掩码用比特表示虚线/填充样式，供图形展示区别对象。
+// 枚举名字把具体掩码编号命名，位模式是绘图设置而非线路连接关系。
+// 本文件定义样式，不进行渲染或布线，具体使用方再应用这些值。
 /* Copyright 2014-2018 Rsyn
+ * 掩码每一位控制图案显示，枚举常量命名样式；没有独立求路径的局部变量或循环。
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
