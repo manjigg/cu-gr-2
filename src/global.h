@@ -1,5 +1,5 @@
 // 文件功能：汇集全局依赖、空间索引类型和 Parameters 运行参数。
-// Parameters 解析 LEF/DEF/输出路径及线程数；其余 const 成员是算法的固定调参值。
+// Parameters 支持单 die 和 H3D 双 die 的输入/输出；const 成员是算法固定调参值。
 //
 // 【本文件怎样读】先看 Parameters，再按需要回来看 include 列表。
 // Parameters 是把许多配置装在一起的“参数表”，不是全局布线算法本身。
@@ -75,6 +75,20 @@ struct Parameters {
     std::string lef_file;
     std::string def_file;
     std::string out_file;
+    std::string top_def_file;
+    std::string bottom_def_file;
+    std::string hbt_config_file;
+    std::string output_dir;
+    std::string h3d_netlist_file;
+    std::string h3d_net_selection_file;
+    bool h3d_init_only = false;
+    bool h3d_topology_only = false;
+    // paper 按公开论文算法运行；enhanced 显式启用全域精确解与未来站点预算。
+    std::string h3d_method = "paper";
+    std::uint32_t h3d_seed = 0;
+    std::string h3d_paper_ties = "coalesce";
+    int h3d_assignment_trials = 1;
+    bool isH3D() const { return !top_def_file.empty() || !bottom_def_file.empty(); }
     // =1 给出默认值；之后 -threads 的文字参数会转换为整数覆盖它。
     int threads = 1;
     // 
@@ -108,7 +122,7 @@ struct Parameters {
     // bool 只有 true/false；这里默认不导出容量余额热力图。
     const bool write_heatmap = false;
     
-    // 当前入口只识别下面四种选项；脚本中的其他历史选项不会在此生效。
+    // 单 die 选项及 H3D 的双 DEF/HBT 配置/输出目录；历史 RRR 选项不在此实现。
     Parameters(int argc, char* argv[]) {
         // 构造函数与类型同名、没有返回类型；创建对象时自动执行。
         if (argc <= 1) {
@@ -118,6 +132,15 @@ struct Parameters {
         // for(起始;继续条件;每轮变化)：从第 1 项扫描，跳过第 0 项程序名。
         // i++ 是用完当前值后加 1；下面 ++i 则先加 1 再取值。
         for (int i = 1; i < argc; i++) {
+            if ((strcmp(argv[i], "-lef") == 0 || strcmp(argv[i], "-def") == 0 ||
+                 strcmp(argv[i], "-output") == 0 || strcmp(argv[i], "-threads") == 0 ||
+                 strcmp(argv[i], "-top-def") == 0 || strcmp(argv[i], "-bottom-def") == 0 ||
+                 strcmp(argv[i], "-hbt-config") == 0 || strcmp(argv[i], "-output-dir") == 0 ||
+                 strcmp(argv[i], "-3d-nets") == 0 || strcmp(argv[i], "-net-selection") == 0 ||
+                  strcmp(argv[i], "-h3d-method") == 0 || strcmp(argv[i], "-h3d-seed") == 0 ||
+                  strcmp(argv[i], "-h3d-paper-ties") == 0 || strcmp(argv[i], "-h3d-assignment-trials") == 0) && i + 1 >= argc) {
+                throw std::invalid_argument(std::string("Missing value for ") + argv[i]);
+            }
             // strcmp 返回 0 才表示两段字符相等；不是“0 表示不相等”。
             if (strcmp(argv[i], "-lef") == 0) {
                 // -lef 后一项才是路径；++i 跳过选项，读取紧随其后的文字。
@@ -130,10 +153,49 @@ struct Parameters {
             } else if (strcmp(argv[i], "-threads") == 0) {
                 // stoi 把例如 "8" 的文字转换为整数 8；这与直接保存字符串不同。
                 threads = std::stoi(argv[++i]);
+            } else if (strcmp(argv[i], "-top-def") == 0) {
+                top_def_file = argv[++i];
+            } else if (strcmp(argv[i], "-bottom-def") == 0) {
+                bottom_def_file = argv[++i];
+            } else if (strcmp(argv[i], "-hbt-config") == 0) {
+                hbt_config_file = argv[++i];
+            } else if (strcmp(argv[i], "-output-dir") == 0) {
+                output_dir = argv[++i];
+            } else if (strcmp(argv[i], "-3d-nets") == 0) {
+                h3d_netlist_file = argv[++i];
+            } else if (strcmp(argv[i], "-net-selection") == 0) {
+                h3d_net_selection_file = argv[++i];
+            } else if (strcmp(argv[i], "-h3d-init-only") == 0) {
+                h3d_init_only = true;
+            } else if (strcmp(argv[i], "-h3d-topology-only") == 0) {
+                h3d_topology_only = true;
+            } else if (strcmp(argv[i], "-h3d-method") == 0) {
+                h3d_method = argv[++i];
+            } else if (strcmp(argv[i], "-h3d-paper-ties") == 0) {
+                h3d_paper_ties = argv[++i];
+            } else if (strcmp(argv[i], "-h3d-assignment-trials") == 0) {
+                h3d_assignment_trials = std::stoi(argv[++i]);
+            } else if (strcmp(argv[i], "-h3d-seed") == 0) {
+                auto seed = std::stoull(argv[++i]);
+                if (seed > std::numeric_limits<std::uint32_t>::max()) throw std::invalid_argument("H3D seed exceeds uint32 range");
+                h3d_seed = static_cast<std::uint32_t>(seed);
             } else {
                 log() << "Unrecognized arg..." << std::endl;
                 log() << argv[i] << std::endl;
             }
+        }
+        if (lef_file.empty()) throw std::invalid_argument("Specify -lef");
+        if (h3d_method != "paper" && h3d_method != "enhanced") throw std::invalid_argument("-h3d-method must be paper or enhanced");
+        if (h3d_paper_ties != "first" && h3d_paper_ties != "coalesce") throw std::invalid_argument("-h3d-paper-ties must be first or coalesce");
+        if (h3d_assignment_trials < 1 || h3d_assignment_trials > 1024) throw std::invalid_argument("-h3d-assignment-trials must be in [1,1024]");
+        if (h3d_init_only && h3d_topology_only) throw std::invalid_argument("Choose one H3D diagnostic mode");
+        if (isH3D()) {
+            if (top_def_file.empty() || bottom_def_file.empty() || hbt_config_file.empty() || output_dir.empty()) {
+                throw std::invalid_argument("H3D requires -top-def, -bottom-def, -hbt-config and -output-dir");
+            }
+            if (!def_file.empty()) throw std::invalid_argument("Use either -def or the two H3D DEF inputs");
+        } else if (def_file.empty() || out_file.empty()) {
+            throw std::invalid_argument("Single-die routing requires -def and -output");
         }
         log() << "lef file: " << lef_file << std::endl;
         log() << "def file: " << def_file << std::endl;

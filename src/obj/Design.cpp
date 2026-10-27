@@ -3,19 +3,27 @@
 //
 // 【输入和输出】输入是两个文件路径；输出不是新文件，而是填满 Design 的成员字段。
 // 读取的顺序很重要：先有工艺层才能给引脚形状编号，先有实例才能建立引脚引用。
-// read() 分成 5 大步：层 -> 模板/实例 -> 信号线网 -> 固定障碍 -> 网格边界。
+// read() 创建独立输入上下文；extract() 分五步提取层、实例、线网、障碍和网格。
 // Rsyn 负责认识文件格式；这里负责把解析结果改装成路由器直接能用的数据。
 // 例如库引脚局部矩形为 (0,0)-(10,5)，实例放在 (100,200)，查询后变成
 // (100,200)-(110,205)。本例只是解释平移，实际还会先处理旋转/镜像。
 // 函数参数里非 const 的 vector& 是“要装结果的列表”，方法可往里面追加内容。
 #include "Design.h"
+#include "DesignInput.h"
 
 // 实现从输入文件中读取并整理这些数据
 
 void Design::read(std::string lef_file, std::string def_file) {
-    // 【本方法变量表】lef_file/def_file 是路径文字；params 是传给读取器的 JSON 表。
-    // reader 格式读取器；session 共享会话；physicalService 物理服务地址；
-    // physicalDesign 物理数据库代理；rsynDesign 逻辑设计；rsynModule 顶层模块。
+    log() << "parsing..." << std::endl;
+    loghline();
+    // input 拥有本次导入的独立上下文，双 die 不经全局 Session 共享实例/线网。
+    DesignInput input(lef_file, def_file);
+    log() << "Rsyn finished loading lef/def" << std::endl;
+    extract(input.physical, input.logical);
+}
+
+void Design::extract(Rsyn::PhysicalDesign physicalDesign, Rsyn::Design rsynDesign) {
+    // 【本方法变量表】physicalDesign 物理数据库代理；rsynDesign 逻辑设计；rsynModule 顶层模块。
     // dieBound Rsyn 裸片边界；rsynLayer 当前工艺层；rsynTracks 当前层轨道集合。
     // numCells/numPorts/numSpecialNets 仅用于统计数量，不是对象下标。
     // instanceIndices：“实例名->实例下标”；macroNameIndices：“原型号名->编号”；
@@ -34,23 +42,7 @@ void Design::read(std::string lef_file, std::string def_file) {
     // dimension 网格轴；low/high 裸片该轴 DBU 边界；rsynGCell 一组粗网格定义；
     // location 起点、step 步长均为 DBU；numStep 重复数；direction 网格线几何方向。
     // 执行顺序按下面 5 个编号段：前段创建的模板/实例是后段建立引脚引用的前提。
-    // Design::read 的 :: 表示“这是 Design 类型的 read 方法”，不是新建另一个类。
-    log() << "parsing..." << std::endl;
-    loghline();
-    // JSON 是按名字存值的参数表：读取器看到 lefFile/defFile 就知道输入在哪里。
-    const Rsyn::Json params = {{"lefFile", lef_file}, {"defFile", def_file}};
-    Rsyn::ISPD2018Reader reader;
-    reader.load(params);
-    log() << "Rsyn finished loading lef/def" << std::endl;
-    // GET DATA FOR DESIGN 
-    
-    // Reader 将逻辑和物理信息放进共享 Session，这里取出顶层网表及物理服务。
-    Rsyn::Session session;
-    // 星号 * 表示保存对象地址；-> 是“通过地址访问那个对象的方法”。
-    // 服务名就像柜台名，这里向共享会话要到保存物理设计的柜台。
-    Rsyn::PhysicalService* physicalService = session.getService("rsyn.physical");
-    Rsyn::PhysicalDesign physicalDesign= physicalService->getPhysicalDesign();
-    Rsyn::Design rsynDesign = session.getDesign();
+    // Design::extract 的 :: 表示“这是 Design 类型的方法”，不是新建另一个类。
     Rsyn::Module rsynModule = rsynDesign.getTopModule();
     
     libDBU = physicalDesign.getDatabaseUnits(Rsyn::LIBRARY_DBU);
@@ -60,8 +52,16 @@ void Design::read(std::string lef_file, std::string def_file) {
     
     // 1. Get layers
     // 范围 for：依次取出列表里的每个层。const & 是只读借用当前层。
+    std::size_t routingIndex = 0;
     for (const Rsyn::PhysicalLayer& rsynLayer : physicalDesign.allPhysicalLayers()) {
         if (rsynLayer.getType() == Rsyn::ROUTING) {
+            if (!routingLayers.empty()) {
+                if (routingIndex >= routingLayers.size()) { routingIndex++; continue; }
+                if (routingLayers[routingIndex] != rsynLayer.getName()) {
+                    throw std::invalid_argument("Requested routing layers must be a contiguous prefix of the LEF metal stack");
+                }
+            }
+            routingIndex++;
             const auto& rsynTracks = physicalDesign.allPhysicalTracks(rsynLayer);
             // emplace_back 在列表末尾直接构造一个 MetalLayer，转换规则及轨道信息。
             layers.emplace_back(rsynLayer, rsynTracks, libDBU);
@@ -70,6 +70,10 @@ void Design::read(std::string lef_file, std::string def_file) {
         }
     }
     
+    if (!routingLayers.empty() && layers.size() != routingLayers.size()) {
+        throw std::invalid_argument("Requested routing layer was not found in LEF");
+    }
+
     // 2. Get macros and instances
     int numCells = 0;
     int numPorts = 0;
@@ -243,7 +247,7 @@ void Design::read(std::string lef_file, std::string def_file) {
         for (unsigned dimension = 0; dimension < 2; dimension++) {
              const int low = dieRegion[dimension].low;
              const int high = dieRegion[dimension].high;
-             for (int i = low; i + defaultGridlineSpacing < high; i += defaultGridlineSpacing) {
+             for (DBU i = low; i < high; i += gridlineSpacing) {
                  gridlines[dimension].push_back(i);
              }
              if (gridlines[dimension].back() != high)
@@ -260,6 +264,7 @@ void Design::read(std::string lef_file, std::string def_file) {
         for (unsigned dimension = 0; dimension < 2; dimension++) {
             gridlines[dimension].push_back(dieRegion[dimension].low);
             sort(gridlines[dimension].begin(), gridlines[dimension].end());
+            gridlines[dimension].erase(std::unique(gridlines[dimension].begin(), gridlines[dimension].end()), gridlines[dimension].end());
             if (gridlines[dimension].back() != dieRegion[dimension].high)
                 gridlines[dimension].push_back(dieRegion[dimension].high);
         }
@@ -287,6 +292,9 @@ void Design::setUnitCosts() {
     // layerIndex 逐层下标，乘该层线宽把面积分转换成每 DBU 长度分。
     // 若 M2 轨距为 100 DBU，线长权重为 0.5，则每 DBU 线长评分是 0.005。
     // 除以轨距把不同设计尺度统一成“若干轨距长的线”；数字只用于示例。
+    if (layers.size() < 3 || layers[1].getPitch() <= 0) {
+        throw std::runtime_error("Routing requires at least three metal layers and valid M2 tracks");
+    }
     DBU m2_pitch = layers[1].getPitch();
     unit_length_wire_cost = parameters.weight_wire_length / m2_pitch;
     unit_via_cost = parameters.weight_via_number;
@@ -296,6 +304,17 @@ void Design::setUnitCosts() {
     for (int layerIndex = 0; layerIndex < layers.size(); layerIndex++) {
         unit_length_short_costs[layerIndex] = unit_area_short_cost * layers[layerIndex].getWidth();
     } 
+}
+
+std::pair<std::string, std::string> Design::getPinNames(const PinReference& pin) const {
+    const auto& instance = instances.at(pin.instanceIndex);
+    return {instance.getName(), instance.isCell() ? macros.at(instance.getMacroIndex()).getPinName(pin.pinIndex) : ""};
+}
+
+PinReference Design::addPort(const std::string& name, const BoxOnLayer& shape) {
+    int index = instances.size();
+    instances.emplace_back(index, name, shape);
+    return {index, -1};
 }
 
 // 模板已完成朝向变换，只需平移到实例位置；端口的几何已经是芯片坐标。
@@ -330,11 +349,16 @@ void Design::getAllObstacles(vector<vector<utils::BoxT<DBU>>>& allObstacles, boo
     allObstacles.resize(getNumLayers());
     // cell obstacles
     for (const auto& instance : instances) {
-        if (!instance.isCell()) continue;
+        if (!instance.isCell()) {
+            const auto& port = instance.getPort();
+            if (port.layerIdx > 0 || !skipM1) allObstacles[port.layerIdx].emplace_back(port.x, port.y);
+            continue;
+        }
         utils::PointT<DBU> position = instance.getPosition();
         const auto& macro = macros[instance.getMacroIndex()];
         const vector<BoxOnLayer>& macroObstacles = macro.getObstacles();
         for (const BoxOnLayer& obs : macroObstacles) {
+            if (obs.layerIdx >= getNumLayers()) continue;
             if (obs.layerIdx > 0 || !skipM1) {
                 allObstacles[obs.layerIdx].emplace_back(obs.x, obs.y);
                 allObstacles[obs.layerIdx].back().ShiftBy(position);
@@ -343,6 +367,7 @@ void Design::getAllObstacles(vector<vector<utils::BoxT<DBU>>>& allObstacles, boo
     }
     // other obstacles
     for (const BoxOnLayer& obs : obstacles) {
+        if (obs.layerIdx >= getNumLayers()) continue;
         if (obs.layerIdx > 0 || !skipM1) {
             allObstacles[obs.layerIdx].emplace_back(obs.x, obs.y);
         }

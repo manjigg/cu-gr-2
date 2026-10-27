@@ -60,9 +60,16 @@ GridGraph::GridGraph(const Design& design, const Parameters& params): libDBU(des
     
     // 每层只建立首选方向边；跨 GCell 的边以其较低坐标端点作为数组索引。
     // Init grid graph edges
-    vector<vector<int>> gridTracks(nLayers);
-    // assign 创建 nLayers 份 xSize×ySize 边数组，GraphEdge 构造使容量/需求先为 0。
     graphEdges.assign(nLayers, vector<vector<GraphEdge>>(xSize, vector<GraphEdge>(ySize)));
+    rebuildCapacities(design);
+}
+
+void GridGraph::rebuildCapacities(const Design& design) {
+    if (design.getNumLayers() != nLayers || design.getGridlines() != gridlines) {
+        throw std::invalid_argument("Cannot change the layer/grid topology while rebuilding capacities");
+    }
+    // 与初次建图共用同一套轨道/间距/障碍区间计算，不清空 graphEdges.demand。
+    vector<vector<int>> gridTracks(nLayers);
     for (int layerIndex = 0; layerIndex < nLayers; layerIndex++) {
         const MetalLayer& layer = design.getLayer(layerIndex);
         const unsigned direction = layer.getDirection();
@@ -222,6 +229,9 @@ utils::IntervalT<int> GridGraph::rangeSearchRows(const unsigned dimension, const
     // 输入是物理区间，输出是与之相交的格子编号区间。
     // 若高端正落在边界上，使用左边格子，避免把仅接触边界的下一格也算进去。
     const auto& lineRange = rangeSearchGridlines(dimension, locInterval);
+    if (lineRange.low >= gridlines[dimension].size() || lineRange.high < 0) {
+        throw std::out_of_range("Physical geometry lies outside the routing grid");
+    }
     return {
         gridlines[dimension][lineRange.low] == locInterval.low ? lineRange.low : max(lineRange.low - 1, 0),
         gridlines[dimension][lineRange.high] == locInterval.high ? lineRange.high - 1 : min(lineRange.high, static_cast<int>(getSize(dimension)) - 1)
@@ -626,7 +636,7 @@ void GridGraph::updateWireCostView(GridGraphView<CostT>& view, std::shared_ptr<G
                 }
             } else {
                 int maxLayerIndex = max(node->layerIdx, child->layerIdx);
-                for (int layerIdx = min(node->layerIdx, child->layerIdx); layerIdx < maxLayerIndex; layerIdx++) {
+                for (int layerIdx = min(node->layerIdx, child->layerIdx); layerIdx <= maxLayerIndex; layerIdx++) {
                     unsigned direction = getLayerDirection(layerIdx);
                     update(direction, node->x, node->y);
                     if ((*node)[direction] > 0) update(direction, node->x - 1 + direction, node->y - direction);

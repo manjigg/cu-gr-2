@@ -228,11 +228,13 @@ int defPin(defrCallbackType_e, defiPin *pin, defiUserData userData) {
 	defPin.clsName = pin->pinName();
 	defPin.clsNetName = pin->netName();
 	defPin.clsDirection = pin->direction();
+	if (pin->hasUse()) defPin.clsUse = pin->use();
 	defPin.clsPos[X] = pin->placementX();
 	defPin.clsPos[Y] = pin->placementY();
 	defPin.clsICCADPos = defPin.clsPos;
 	defPin.clsOrientation = pin->orientStr();
 	if (pin->hasLayer()) {
+		if (pin->numLayer() != 1) throw std::runtime_error("Multiple flat DEF pin rectangles are not supported: " + defPin.clsName);
 		defPin.clsLayerName = pin->layer(0);
 		int xl, yl, xh, yh;
 		pin->bounds(0, &xl, &yl, &xh, &yh);
@@ -241,7 +243,31 @@ int defPin(defrCallbackType_e, defiPin *pin, defiUserData userData) {
 		defPin.clsLayerBounds[UPPER][X] = xh;
 		defPin.clsLayerBounds[UPPER][Y] = yh;
 		defPin.clsICCADPos += defPin.clsLayerBounds.computeCenter(); // legacy iccad15 contest pin position
-	} // end if 
+	} else if (pin->hasPort()) {
+		// DEF 5.7/5.8 把几何和 placement 放在 + PORT 内，而非 defiPin 本身。
+		// 当前 CUGR 端口模型只表示一个矩形；不静默截断多 PORT/多矩形输入。
+		if (pin->numPorts() != 1 || pin->pinPort(0)->numLayer() != 1 || pin->pinPort(0)->numPolygons() != 0) {
+			throw std::runtime_error("Unsupported multi-shape DEF PORT: " + defPin.clsName);
+		}
+		const auto* port = pin->pinPort(0);
+		defPin.clsLayerName = port->layer(0);
+		int xl, yl, xh, yh;
+		port->bounds(0, &xl, &yl, &xh, &yh);
+		defPin.clsLayerBounds[LOWER][X] = xl;
+		defPin.clsLayerBounds[LOWER][Y] = yl;
+		defPin.clsLayerBounds[UPPER][X] = xh;
+		defPin.clsLayerBounds[UPPER][Y] = yh;
+		if (port->hasPlacement()) {
+			defPin.clsPos[X] = port->placementX();
+			defPin.clsPos[Y] = port->placementY();
+			defPin.clsOrientation = port->orientStr();
+		} else if (!pin->hasPlacement()) {
+			throw std::runtime_error("DEF PORT has no placement: " + defPin.clsName);
+		}
+		defPin.clsICCADPos = defPin.clsPos + defPin.clsLayerBounds.computeCenter();
+	} else {
+		throw std::runtime_error("DEF pin has no rectangular geometry: " + defPin.clsName);
+	}
 	return 0;
 } // end method
 
@@ -581,6 +607,7 @@ int defVia(defrCallbackType_e c, defiVia * via, defiUserData ud) {
 int defUnits(defrCallbackType_e c, double d, defiUserData ud) {
 	DefDscp & defDscp = getDesignFromUserData(ud);
 	defDscp.clsDatabaseUnits = static_cast<int> (d);
+	defDscp.clsHasDatabaseUnits = true;
 	return 0;
 } // end method
 
@@ -589,6 +616,7 @@ int defUnits(defrCallbackType_e c, double d, defiUserData ud) {
 int defVersion(defrCallbackType_e c, double d, defiUserData ud) {
 	DefDscp &defDscp = getDesignFromUserData(ud);
 	defDscp.clsVersion = d;
+	defDscp.clsHasVersion = true;
 	return 0;
 } // end method
 
@@ -630,6 +658,7 @@ int defDieArea(defrCallbackType_e typ, defiBox* box, defiUserData ud) {
 	defDscp.clsDieBounds[LOWER][Y] = box->defiBox::yl();
 	defDscp.clsDieBounds[UPPER][X] = box->defiBox::xh();
 	defDscp.clsDieBounds[UPPER][Y] = box->defiBox::yh();
+	defDscp.clsHasDieBounds = true;
 	return 0;
 } // end method
 

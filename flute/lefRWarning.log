@@ -1,0 +1,11 @@
+Warnings from file: /home/wanghh/h3d/cu-gr-2/benchmarks_h3d/NangateOpenCellLibraryWithoutMacro.lef
+
+WARNING (LEFPARS-2077): A SPACING SAMENET section is defined but it is not legal in a LEF 5.7 version file.
+It will be ignored which will probably cause real DRC violations to be ignored, and may
+cause false DRC violations to occur.
+
+To avoid this warning, and correctly handle these DRC rules, you should modify your
+LEF to use the appropriate SAMENET keywords as described in the LEF/DEF 5.7
+manual under the SPACING statements in the LAYER (Routing) and LAYER (Cut)
+sections listed in the LEF Table of Contents. See file /home/wanghh/h3d/cu-gr-2/benchmarks_h3d/NangateOpenCellLibraryWithoutMacro.lef at line 606
+WARNING (LEFPARS-2001): No VERSION statement found, using the default value 5.8. See file /home/wanghh/h3d/cu-gr-2/benchmarks_h3d/NangateOpenCellLibraryWithoutMacro.lef at line 5376

@@ -8,6 +8,15 @@
 // 这里没有选哪个候选最好；这个决策在 GridGraph::selectAccessPoints。
 #include "GRNet.h"
 
+GRNet::GRNet(int idx, const std::string& netName, vector<vector<GRPoint>> accessPoints):
+    index(idx), name(netName), pinAccessPoints(std::move(accessPoints)) {
+    if (pinAccessPoints.empty()) throw std::invalid_argument("A routing net needs at least one terminal");
+    for (const auto& pin : pinAccessPoints) {
+        if (pin.empty()) throw std::invalid_argument("A routing terminal has no access point");
+        for (const auto& point : pin) boundingBox.Update(point);
+    }
+}
+
 
 GRNet::GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph) {
     // baseNet 输入连接名单；design 提供物理形状；gridGraph 提供格子边界和位置编码。

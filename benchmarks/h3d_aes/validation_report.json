@@ -1,0 +1,35 @@
+{
+  "site_alignment_audit": {
+    "top": {
+      "instances": 5958,
+      "x_site_aligned": 688,
+      "y_row_aligned": 5958,
+      "origin_within_diearea": 5958
+    },
+    "bottom": {
+      "instances": 7252,
+      "x_site_aligned": 1968,
+      "y_row_aligned": 7252,
+      "origin_within_diearea": 7252
+    }
+  },
+  "input_def_declared_components": 13478,
+  "source_actual_instances": 13210,
+  "source_original_nets": 14310,
+  "source_original_pins": 388,
+  "top_instances": 5958,
+  "bottom_instances": 7252,
+  "top_net_records": 7247,
+  "bottom_net_records": 8742,
+  "external_pins_assigned_bottom": 388,
+  "cross_die_nets_assuming_external_pins_bottom": 1679,
+  "cross_die_nets_with_preassigned_terminal": 1492,
+  "cross_die_nets_without_preassigned_terminal": 187,
+  "cross_die_nets_involving_external_io": 187,
+  "sum_local_endpoint_counts": 51663,
+  "complete_original_net_connectivity_preserved": true,
+  "reference_hbt_instances_removed": 1492,
+  "lef_macro_pin_check": "pass",
+  "reference_placement_coordinates_check": "pass",
+  "physical_DRC_or_full_router_read_success": "not evaluated"
+}

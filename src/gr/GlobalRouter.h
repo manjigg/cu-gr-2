@@ -13,10 +13,21 @@
 #include "GridGraph.h"
 #include "GRNet.h"
 
+struct CapacitySyncStats {
+    int changedEdges = 0;
+    double capacityReduction = 0;
+    bool demandPreserved = false;
+    bool matchesFreshGeometry = false;
+};
+
 class GlobalRouter {
 public:
-    GlobalRouter(const Design& design, const Parameters& params);
-    void route();
+    GlobalRouter(const Design& design, const Parameters& params, bool importNets = true);
+    void route(bool initialRouting = true);
+    void addRoutedNet(GRNet net, std::shared_ptr<class SteinerTreeNode> topology);
+    CapacitySyncStats synchronizeCapacities(const Design& design);
+    const GridGraph& getGridGraph() const { return gridGraph; }
+    const vector<GRNet>& getNets() const { return nets; }
     void write(std::string guide_file = "");
     
 private:

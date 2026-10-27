@@ -282,7 +282,7 @@ std::shared_ptr<SteinerTreeNode> MazeRoute::getSteinerTree() const {
             if (node->x == child->x && node->y == child->y) {
                 for (auto& gradchild : child->children) node->children.emplace_back(gradchild);
                 if (child->fixedLayers.IsValid()) {
-                    if (node->fixedLayers.IsValid()) node->fixedLayers.UnionWith(child->fixedLayers);
+                    if (node->fixedLayers.IsValid()) node->fixedLayers = node->fixedLayers.UnionWith(child->fixedLayers);
                     else node->fixedLayers = child->fixedLayers;
                 }
                 node->children.erase(node->children.begin() + childIndex);

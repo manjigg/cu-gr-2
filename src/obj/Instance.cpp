@@ -41,6 +41,7 @@ Macro::Macro(int idx, const Rsyn::Cell& cell, const Rsyn::PhysicalDesign& physic
         if (!pin.isPowerOrGround()) {
             pinIndex = pins.size();
             pinIndices.emplace(pin.getName(), pinIndex);
+            pinNames.push_back(pin.getName());
             pins.emplace_back();
         }
         
@@ -90,6 +91,7 @@ int Macro::getPinIndex(std::string pinName) {
 
 // 对端口应用位置和朝向，保存可直接参与网格映射的芯片坐标矩形。
 Instance::Instance(int idx, std::string _name, const Rsyn::PhysicalPort& phyPort): index(idx), name(_name), type(PORT) {
+    if (!phyPort.getLayer()) throw std::invalid_argument("Missing physical layer for DEF port " + _name);
     // phyPort 输入端口资料，position DBU 位置，bounds 端口边界，transform 端口朝向变换。
     // 先把边界加到端口位置，再按此位置/朝向变换，结果写入成员 port。
     auto position = phyPort.getPosition();

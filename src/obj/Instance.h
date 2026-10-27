@@ -18,6 +18,7 @@ public:
     int getPinIndex(std::string pinName);
     const vector<BoxOnLayer>& getObstacles() const { return obstacles; }
     const vector<BoxOnLayer>& getPinShapes(int pinIndex) const { return pins[pinIndex]; }
+    std::string getPinName(int pinIndex) const { return pinNames.at(pinIndex); }
     
 private:
     // name：库模板名字；orientation：旋转/镜像姿态，不是 H/V 布线方向。
@@ -30,6 +31,7 @@ private:
     robin_hood::unordered_map<std::string, int> pinIndices;
     // pins[pinIndex][shapeIndex]：某信号引脚的第 shapeIndex 块局部带层矩形。
     vector<vector<BoxOnLayer>> pins;
+    vector<std::string> pinNames;
     // obstacles[i]：第 i 块局部占用矩形，包括引脚金属和库 OBS。
     vector<BoxOnLayer> obstacles;
 };
@@ -43,6 +45,8 @@ public:
     Instance(int idx, std::string _name, int macroIndex, utils::PointT<DBU> pos):
         index(idx), name(_name), macroIndex(macroIndex), position(pos), type(CELL) {}
     Instance(int idx, std::string _name, const Rsyn::PhysicalPort& phyPort);
+    Instance(int idx, std::string _name, const BoxOnLayer& shape): name(_name), index(idx), type(PORT), port(shape) {}
+    std::string getName() const { return name; }
     bool isCell() const { return type == CELL; }
     int getMacroIndex() const { return macroIndex; }
     utils::PointT<DBU> getPosition() const { return position; }

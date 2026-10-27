@@ -1,0 +1,8 @@
+﻿benchmark,total_wire_length_um,total_via_count,hbt_count,total_drc,sum_wall_seconds,status
+aes,151861.0,125655,524,0,770.59,passed
+tinyRocket,334866.0,206142,2167,0,582.61,passed
+ethmac,434479.0,222477,4902,0,302.71,passed
+mor1kx,1327981.0,560719,7654,0,995.7,passed
+ariane,3126930.0,1390982,19409,0,3180.7,passed
+jpegencode,2504776.0,1413817,19374,0,1742.29,passed
+bp,4699669.0,1984490,24122,0,3618.19,passed

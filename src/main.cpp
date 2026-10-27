@@ -14,6 +14,7 @@
 // .h 通常说明有哪些类型/方法，.cpp 通常写方法具体怎样完成工作。
 #include "obj/Design.h"
 #include "gr/GlobalRouter.h"
+#include "h3d/H3DGlobalRouter.h"
 
 // main 是操作系统启动程序时首先进入的函数。
 // int 表示函数结束可返回整数状态；到 main 末尾未写 return 时相当于返回 0。
@@ -21,6 +22,7 @@
 // char* 是“指向字符的地址”，此处每个 argv[i] 可以先理解为一段命令行文字。
 // 花括号 { } 围出函数工作区；每条以 ; 结尾的语句按先后顺序执行。
 int main(int argc, char* argv[]) {
+    try {
     // 【变量对照】argc 参数项数，argv[i] 第 i 项文字；parameters 是解析后的参数对象。
     // design 是芯片资料持有者，globalRouter 是调度器。三者按定义顺序创建、反序销毁。
     // 返回值 0 表示正常进程状态，不是“零条线网”或“零溢出”。
@@ -33,6 +35,10 @@ int main(int argc, char* argv[]) {
     // “类型 变量名(参数)”：创建 Parameters 类型的对象，取名 parameters。
     // 同名构造函数 Parameters(...) 会被自动调用，将命令行文字转为字段。
     Parameters parameters(argc, argv);
+    if (parameters.isH3D()) {
+        h3d::routeH3D(parameters);
+        return 0;
+    }
     
     // Read LEF/DEF
     // 把上一步的参数交给 Design。该对象拥有层、实例、线网、障碍等资料。
@@ -57,4 +63,8 @@ int main(int argc, char* argv[]) {
     // 最后打印当前/峰值内存，帮助观察读取和路由过程中资源用了多少。
     logmem();
     logeol();
+    } catch (const std::exception& error) {
+        std::cerr << "Routing failed: " << error.what() << std::endl;
+        return 1;
+    }
 }

@@ -13,8 +13,9 @@
 #include "MazeRoute.h"
 #include <chrono>
 
-GlobalRouter::GlobalRouter(const Design& design, const Parameters& params): 
+GlobalRouter::GlobalRouter(const Design& design, const Parameters& params, bool importNets):
     gridGraph(design, params), parameters(params) {
+    if (!importNets) return;
     // Instantiate the global routing netlist
     const vector<Net>& baseNets = design.getAllNets();
     // reserve 预留存储空间，避免反复分配；它不会创建那么多 GRNet。
@@ -32,7 +33,45 @@ GlobalRouter::GlobalRouter(const Design& design, const Parameters& params):
     // 第三阶段	Maze Routing（迷宫布线）	                        对仍有拥塞问题的线网，进行更灵活的路径搜索
     // 这三个阶段不是三个互不相关的算法，而是逐步处理布线问题，优先采用效率较高的方法，必要时再使用更灵活的方法。
 
-void GlobalRouter::route() {
+void GlobalRouter::addRoutedNet(GRNet net, std::shared_ptr<SteinerTreeNode> topology) {
+    if (net.getIndex() != nets.size()) throw std::invalid_argument("Non-contiguous routing net index");
+    nets.push_back(std::move(net));
+    PatternRoute router(nets.back(), gridGraph, parameters);
+    if (topology) router.setSteinerTree(topology);
+    else router.constructSteinerTree();
+    router.constructRoutingDAG();
+    router.run();
+    gridGraph.commitTree(nets.back().getRoutingTree());
+}
+
+CapacitySyncStats GlobalRouter::synchronizeCapacities(const Design& design) {
+    std::vector<GraphEdge> before;
+    for (int layer = 0; layer < gridGraph.getNumLayers(); layer++) {
+        for (int x = 0; x < gridGraph.getSize(0); x++) for (int y = 0; y < gridGraph.getSize(1); y++) {
+            before.push_back(gridGraph.getEdge(layer, x, y));
+        }
+    }
+    gridGraph.rebuildCapacities(design);
+    // 独立新建最终几何地图作一致性基准；现有图必须保留全部已布需求。
+    GridGraph fresh(design, parameters);
+    CapacitySyncStats result;
+    std::size_t index = 0;
+    for (int layer = 0; layer < gridGraph.getNumLayers(); layer++) {
+        for (int x = 0; x < gridGraph.getSize(0); x++) for (int y = 0; y < gridGraph.getSize(1); y++, index++) {
+            auto edge = gridGraph.getEdge(layer, x, y);
+            auto reference = fresh.getEdge(layer, x, y);
+            if (edge.demand != before[index].demand) throw std::logic_error("Capacity synchronization changed committed routing demand");
+            if (std::abs(edge.capacity - reference.capacity) > 1e-9) throw std::logic_error("Capacity map does not match final pad geometry");
+            if (edge.capacity > before[index].capacity + 1e-9) throw std::logic_error("Adding fixed pads unexpectedly increased capacity");
+            if (std::abs(edge.capacity - before[index].capacity) > 1e-9) result.changedEdges++;
+            result.capacityReduction += before[index].capacity - edge.capacity;
+        }
+    }
+    result.demandPreserved = true; result.matchesFreshGeometry = true;
+    return result;
+}
+
+void GlobalRouter::route(bool initialRouting) {
     // 【局部变量】n1/n2/n3 是各阶段开始的待办网数量；t1/t2/t3 是各阶段耗时秒。
     // t 当前计时起点；netIndices 待处理网编号；netIndex 本轮编号；net 当前可修改 GRNet。
     // patternRoute 当前网的模式求解器；mazeRoute 当前网的迷宫求解器。
@@ -55,9 +94,9 @@ void GlobalRouter::route() {
     // Stage 1: Pattern routing
     n1 = netIndices.size();
     PatternRoute::readFluteLUT();
-    log() << "stage 1: pattern routing" << std::endl;
+    log() << (initialRouting ? "stage 1: pattern routing" : "checking pre-routed subnet overflows") << std::endl;
     sortNetIndices(netIndices);
-    for (const int netIndex : netIndices) {
+    if (initialRouting) for (const int netIndex : netIndices) {
         PatternRoute patternRoute(nets[netIndex], gridGraph, parameters);
         // ①确定要连接的二维拓扑；②展开候选路径；③按代价选路径和层。
         // 此处的 PatternRoute 是本轮当前线网的临时求解器，每轮都会重新创建。
@@ -201,13 +240,15 @@ void GlobalRouter::getGuides(const GRNet& net, vector<std::pair<int, utils::BoxT
     // net 输入当前网，routingTree 其三维树根，node/child 当前父/子节点。
     // guides 输出“真实层编号,格子索引矩形”，尚未转 DBU；maxLayerIndex 跨层高端。
     // getSpareResource 小函数输入 point；resource 当前最小余额；direction 该层首选方向。
-    // lower 是沿走线轴减一的临时点。注意当前后一分支的 getEdge 仍传 point.x/point.y，
-    // 不能仅因变量名 lower 就把源实现解释成已查询相邻低端坐标。
+    // lower 是沿走线轴减一的临时点，用它的坐标查询低端相邻边。
     // gpts 为单引脚候选列表，gpt 当前候选；padding 扩到周围多少格。
     // wire_patch_threshold 当前局部阈值；l/h 线段走线轴两端，r 固定的另一轴，c 当前格位置。
     // point 当前补丁位置，patched 本格是否补成功，layerIndex 要尝试的相邻真实层。
     auto& routingTree = net.getRoutingTree();
     if (!routingTree) return;
+    if (routingTree->children.empty()) {
+        guides.emplace_back(routingTree->layerIdx, utils::BoxT<int>(routingTree->x, routingTree->y));
+    }
     // 0. Basic guides
     // 给遍历器一段操作：每遇到一个节点，就把它与孩子之间的连接转成矩形。
     // -> 通过 shared_ptr 访问节点；node->children 是这个节点的孩子列表。
@@ -241,7 +282,7 @@ void GlobalRouter::getGuides(const GRNet& net, vector<std::pair<int, utils::BoxT
         if (point[direction] > 0) {
             GRPoint lower = point;
             lower[direction] -= 1;
-            resource = min(resource, gridGraph.getEdge(lower.layerIdx, point.x, point.y).getResource());
+            resource = min(resource, gridGraph.getEdge(lower.layerIdx, lower.x, lower.y).getResource());
         }
         return resource;
     };
@@ -409,6 +450,7 @@ void GlobalRouter::write(std::string guide_file) {
     log() << std::endl;
     log() << "writing output..." << std::endl;
     std::ofstream fout(guide_file);
+    if (!fout) throw std::runtime_error("Cannot open guide output: " + guide_file);
     fout << ss.str();
     fout.close();
     log() << "finished writing output..." << std::endl;

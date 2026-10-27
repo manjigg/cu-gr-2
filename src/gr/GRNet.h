@@ -16,6 +16,7 @@
 class GRNet {
 public:
     GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph);
+    GRNet(int idx, const std::string& netName, vector<vector<GRPoint>> accessPoints);
     
     int getIndex() const { return index; }
     std::string getName() const { return name; }

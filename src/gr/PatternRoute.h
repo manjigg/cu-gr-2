@@ -67,7 +67,10 @@ public:
 
 class PatternRoute {
 public:
-    static void readFluteLUT() { readLUT(); };
+    static void readFluteLUT() {
+        static const bool loaded = [] { readLUT(); return true; }();
+        (void)loaded;
+    }
     
     PatternRoute(GRNet& _net, const GridGraph& graph, const Parameters& param):
         // net 是可修改引用，因为最终要把结果树写回；graph/param 是只读借用。

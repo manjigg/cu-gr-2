@@ -109,3 +109,34 @@ target_link_libraries(route def)
 # Boost
 target_include_directories(route PUBLIC ${Boost_INCLUDE_DIR})
 target_link_libraries(route ${Boost_LIBRARIES})
+
+# H3D 小规模精确对照与完整双 die 回归，不需要真实 benchmark 或 Innovus。
+option(CUGR_BUILD_TESTS "Build H3D algorithm and end-to-end checks" OFF)
+if(CUGR_BUILD_TESTS)
+    enable_testing()
+    add_executable(h3d_die_assignment_test
+        ../tests/h3d/DieAssignmentTest.cpp h3d/H3DTree.cpp h3d/DieAssignment.cpp)
+    add_executable(h3d_hbt_optimization_test
+        ../tests/h3d/HbtOptimizationTest.cpp h3d/H3DTree.cpp h3d/DieAssignment.cpp
+        h3d/HbtGrid.cpp h3d/HbtLocationOptimizer.cpp)
+    add_executable(h3d_location_replay
+        ../tests/h3d/ReplayLocationTest.cpp h3d/H3DTree.cpp h3d/DieAssignment.cpp
+        h3d/HbtGrid.cpp h3d/HbtLocationOptimizer.cpp)
+    add_executable(h3d_paper_method_test
+        ../tests/h3d/PaperMethodTest.cpp h3d/H3DTree.cpp h3d/DieAssignment.cpp
+        h3d/HbtGrid.cpp h3d/HbtLocationOptimizer.cpp h3d/SubnetPartition.cpp)
+    add_test(NAME h3d_die_assignment COMMAND h3d_die_assignment_test)
+    add_test(NAME h3d_hbt_optimization COMMAND h3d_hbt_optimization_test)
+    add_test(NAME h3d_paper_method COMMAND h3d_paper_method_test)
+    find_package(PythonInterp 3 QUIET)
+    if(PYTHONINTERP_FOUND)
+        add_test(NAME h3d_input_provenance COMMAND ${PYTHON_EXECUTABLE}
+            ${PATH_CUGR}/../tests/h3d/check_input_provenance.py)
+        add_test(NAME single_die_fixture COMMAND ${PYTHON_EXECUTABLE}
+            ${PATH_CUGR}/../tests/h3d/check_fixture.py --route $<TARGET_FILE:route>
+            --output-dir ${CMAKE_BINARY_DIR}/h3d_ctest_smoke)
+        add_test(NAME h3d_end_to_end COMMAND ${PYTHON_EXECUTABLE}
+            ${PATH_CUGR}/../tests/h3d/check_end_to_end.py --route $<TARGET_FILE:route>
+            --output-dir ${CMAKE_BINARY_DIR}/h3d_ctest_e2e)
+    endif()
+endif()

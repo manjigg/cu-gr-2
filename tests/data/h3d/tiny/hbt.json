@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "dbu_per_micron": 2000,
+  "coordinate_frame": "bonded_xy",
+  "top_transform": "identity",
+  "bottom_transform": "identity",
+  "origin_dbu": [3000, 3000],
+  "pitch_dbu": [6000, 6000],
+  "site_counts": [4, 4],
+  "pad_size_dbu": [400, 400],
+  "landing_layers": {"top": "M3", "bottom": "M3"},
+  "blocked_sites": [[0, 0], [1, 1]]
+}

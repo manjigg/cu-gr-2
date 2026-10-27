@@ -1,0 +1,32 @@
+{
+  "status": "proposed research grid; NOT verified legal HBT placement",
+  "def_dbu_per_micron": 2000,
+  "diearea_dbu": [
+    0,
+    0,
+    250000,
+    250000
+  ],
+  "assumed_hbt_pitch_um": 3.0,
+  "assumed_hbt_pitch_dbu": 6000,
+  "grid_origin_dbu": [
+    3000,
+    3000
+  ],
+  "assumed_gcell_pitch_um": 2.1,
+  "assumed_gcell_pitch_dbu": 4200,
+  "routing_layers_per_die": [
+    "metal1",
+    "metal2",
+    "metal3",
+    "metal4",
+    "metal5",
+    "metal6"
+  ],
+  "hbt_interface_layer": "metal6",
+  "caveats": [
+    "HBT candidates must still be checked against real obstacles, spacing, pins and full DRC",
+    "The LEF tech includes metal7-metal10; output DEF intentionally lists TRACKS only for metal1-metal6",
+    "Top-die placement coordinates are in a common projected XY frame, with no additional face-to-face mirroring"
+  ]
+}

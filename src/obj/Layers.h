@@ -39,11 +39,11 @@ private:
     
     // tracks 
     // firstTrackLoc/lastTrackLoc 首/末轨道中心 DBU 坐标，沿走线方向的垂直轴测量。
-    DBU firstTrackLoc;
-    DBU lastTrackLoc;
+    DBU firstTrackLoc = 0;
+    DBU lastTrackLoc = 0;
     // pitch 相邻轨道间距 DBU，numTracks 轨道条数，下标为 0..numTracks-1。
-    DBU pitch;
-    int numTracks;
+    DBU pitch = 0;
+    int numTracks = 0;
     
     // Design rules
     // Min area 

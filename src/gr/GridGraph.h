@@ -32,6 +32,8 @@ struct GraphEdge {
 class GridGraph {
 public:
     GridGraph(const Design& design, const Parameters& params);
+    // 重新从实际固定几何估计容量，保留已经提交的 demand、线长和 via 计数。
+    void rebuildCapacities(const Design& design);
     inline DBU getLibDBU() const { return libDBU; }
     inline DBU getM2Pitch() const { return m2_pitch; }
     inline unsigned getNumLayers() const { return nLayers; }

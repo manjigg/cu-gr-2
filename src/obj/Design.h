@@ -34,6 +34,19 @@ public:
         read(parameters.lef_file, parameters.def_file);
         setUnitCosts();
     }
+    Design(const Parameters& params, Rsyn::PhysicalDesign physical, Rsyn::Design logical,
+           const std::vector<std::string>& requestedLayers = {}, DBU spacing = 0):
+        parameters(params), routingLayers(requestedLayers), gridlineSpacing(spacing > 0 ? spacing : defaultGridlineSpacing) {
+        extract(physical, logical);
+        setUnitCosts();
+    }
+    const utils::BoxT<DBU>& getDieRegion() const { return dieRegion; }
+    int getNumCells() const {
+        return std::count_if(instances.begin(), instances.end(), [](const Instance& instance) { return instance.isCell(); });
+    }
+    int getNumPorts() const { return instances.size() - getNumCells(); }
+    std::pair<std::string, std::string> getPinNames(const PinReference& pin) const;
+    PinReference addPort(const std::string& name, const BoxOnLayer& shape);
     // get* 是查询函数。末尾 const 表示它不会修改本对象的数据。
     // return 把字段交给调用方；这种很短的方法直接写在 .h 中。
     DBU getLibDBU() const { return libDBU; }
@@ -64,6 +77,7 @@ private:
     // obstacles	布线障碍物	已被占用的几何区域
     // parameters：main 创建的参数表，只读借用，内含路径与评分/补丁设置。
     const Parameters& parameters;
+    std::vector<std::string> routingLayers;
     
     // libDBU：每微米对应多少库 DBU，是换算比例而不是芯片长度。
     DBU libDBU;
@@ -92,9 +106,11 @@ private:
     // static 表示这项常量属于类型，不必每个对象单独存一份。
     // 输入没有 GCell 定义时使用，单位为 DBU，不能直接理解为 3000 微米。
     const static int defaultGridlineSpacing = 3000;
+    DBU gridlineSpacing = defaultGridlineSpacing;
     // 两层 vector 是“列表里的列表”：gridlines[0] 是 x 边界，gridlines[1] 是 y 边界。
     vector<vector<DBU>> gridlines;
     
     void read(std::string lef_file, std::string def_file);
+    void extract(Rsyn::PhysicalDesign physicalDesign, Rsyn::Design rsynDesign);
     void setUnitCosts();
 };

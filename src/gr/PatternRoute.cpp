@@ -160,6 +160,7 @@ void PatternRoute::constructSteinerTree() {
             }
         }
         constructTree(steinerTree, -1, root);
+        free(flutetree.branch);
     }
 }
 
@@ -559,7 +560,7 @@ void PatternRoute::constructDetours(GridGraphView<bool>& congestionView) {
             // 下方 while 条件按当前源码实际表达式执行，不等同于严格最优绕行搜索。
             int maxLengthIncrease = trunk.range() * parameters.max_detour_ratio;
             while (shiftInterval.low - 1 >= 0 && getTotalStemLength(stems, shiftInterval.low - 1) - originalLength <= maxLengthIncrease) shiftInterval.low--;
-            while (shiftInterval.high + 1 < gridGraph.getSize(1 - direction) && getTotalStemLength(stems, shiftInterval.high - 1) - originalLength <= maxLengthIncrease) shiftInterval.high++;
+            while (shiftInterval.high + 1 < gridGraph.getSize(1 - direction) && getTotalStemLength(stems, shiftInterval.high + 1) - originalLength <= maxLengthIncrease) shiftInterval.high++;
             int step = 1;
             while ((trunkPos - shiftInterval.low) / (step + 1) + (shiftInterval.high - trunkPos) / (step + 1) >= parameters.target_detour_count) step++;
             utils::IntervalT<int> dupShiftInterval = shiftInterval;

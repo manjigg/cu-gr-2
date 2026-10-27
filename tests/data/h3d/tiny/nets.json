@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "cross_die_nets": {
+    "cross_a": {
+      "top": [["U0", "Y"], ["U1", "A"]],
+      "bottom": [["U0", "A"], ["U1", "A"]]
+    },
+    "cross_b": {
+      "top": [["U2", "A"], ["U3", "A"]],
+      "bottom": [["U0", "Y"], ["U2", "A"]]
+    },
+    "cross_c": {
+      "top": [["U1", "Y"]],
+      "bottom": [["U3", "A"]]
+    }
+  },
+  "local_nets": {
+    "top": ["top_local", "top_out"],
+    "bottom": ["bottom_local"]
+  }
+}

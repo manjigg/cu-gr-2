@@ -34,8 +34,10 @@ MetalLayer::MetalLayer(const Rsyn::PhysicalLayer& rsynLayer, const vector<Rsyn::
             break;
         }
     }
-    
     // Design rules not parsed thoroughly
+    if (pitch <= 0 || numTracks <= 0 || width <= 0) {
+        throw std::invalid_argument("Missing preferred-direction tracks or invalid width for layer " + name);
+    }
     // Min area
     minArea = static_cast<DBU>(std::round(layer->area() * libDBU * libDBU));
     // 将最小面积折算成过孔附近需要补充的导线长度，扣除一个线宽的局部面积。

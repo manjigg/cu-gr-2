@@ -3,5 +3,9 @@ build
 debug
 run*/
 scripts/__pycache__
+__pycache__/
 tags
-
+results
+results_h3d
+detail-routing
+benchmarks_h3d
