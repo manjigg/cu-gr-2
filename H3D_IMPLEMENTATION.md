@@ -109,7 +109,8 @@ LEF 与 DEF 的 DBU 也须相等。`top_transform` / `bottom_transform` 当前�
 | `landing_layers` | 每个 die 的最高布线层名称 |
 | `blocked_sites` | 禁用的 `[ix,iy]` 站点索引，从 0 开始 |
 | `net_aliases` | 可选，本地网名到原始网名的映射 |
-| `hbt_optimization_coordinates` | `physical`（默认）或 `gcell_centers`；后者按焊盘覆盖范围选择最近 GCell 代表点用于优化，物理 HBT 坐标另存，要求站点映射一一对应 |
+| `hbt_optimization_coordinates` | `physical`（默认）或 `gcell_centers`；后者按焊盘覆盖范围选择最近 GCell 代表点用于优化，物理 HBT 坐标另存；默认要求投影一一对应 |
+| `allow_coincident_hbt_grid_points` | 默认 false；显式 true 时允许不同物理 HBT 拥有相同 GCell 代表点，保留独立候选 ID、物理位置和 owner，回溯按选中站点 ID 输出，适用于小于 GCell 间距的更密 HBT 阵列 |
 | `subnet_routing_topology` | paper 默认 `flute`，对拆分后的实际端点重建单 die RSMT；`inherited` 保留旧拓扑接入，用于控制实验（enhanced 仍默认 inherited） |
 | `subnet_pin_access` | `flute` 默认 `physical_shapes`，按真实引脚形状生成 CUGR 接入候选；`fixed_projection` 保留旧的原网投影接入方式 |
 | `write_routing_traces` | 默认 `true`，输出逐网算法 trace；`false` 省略 trace/逐网日志，并紧凑输出汇总 JSON。完整和精简模式的双 DEF/Guide 已逐字节核对一致 |

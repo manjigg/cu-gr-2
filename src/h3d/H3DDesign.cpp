@@ -139,6 +139,7 @@ H3DDesign::H3DDesign(const Parameters& parameters) {
         }
     }
     auto objective = config.value("hbt_optimization_coordinates", std::string("physical"));
+    const bool allowCoincident = config.value("allow_coincident_hbt_grid_points", false);
     if (objective != "physical" && objective != "gcell_centers") {
         throw std::invalid_argument("hbt_optimization_coordinates must be physical or gcell_centers");
     }
@@ -164,12 +165,15 @@ H3DDesign::H3DDesign(const Parameters& parameters) {
                 }
                 coordinate = (graph.getGridline(axis, best) + graph.getGridline(axis, best + 1)) / 2;
             }
-            if (std::adjacent_find(values.begin(), values.end(), std::greater_equal<DBU>()) != values.end()) {
+            if (!std::is_sorted(values.begin(), values.end()) ||
+                (!allowCoincident && std::adjacent_find(values.begin(), values.end()) != values.end())) {
                 throw std::invalid_argument("HBT sites do not map injectively to the uniform grid");
             }
         }
+        config["hbt_projected_axis_duplicates"] = {hx.size() - std::set<DBU>(hx.begin(), hx.end()).size(),
+                                                    hy.size() - std::set<DBU>(hy.begin(), hy.end()).size()};
     }
-    hbt.reset(new HbtGrid(hx, hy, std::vector<int>(blocked.begin(), blocked.end())));
+    hbt.reset(new HbtGrid(hx, hy, std::vector<int>(blocked.begin(), blocked.end()), objective == "gcell_centers" && allowCoincident));
     }
 
     std::map<std::string, OriginalNet> grouped;

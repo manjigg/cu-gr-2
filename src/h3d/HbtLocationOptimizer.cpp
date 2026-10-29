@@ -61,11 +61,14 @@ std::vector<bool> hbtMask(const AssignedTopology& topology) {
     return result;
 }
 
-void finish(LocationResult& result, const AssignedTopology& topology, const HbtGrid& hbt) {
+void finish(LocationResult& result, const AssignedTopology& topology, const HbtGrid& hbt,
+            const std::vector<int>* chosenSites = nullptr) {
     result.hbtSites.clear(); result.wirelength = 0;
-    for (int node : topology.hbtNodes) {
-        int site = hbt.siteAt(result.positions.at(node));
-        if (site < 0 || hbt.owner(site) != -1) throw std::runtime_error("Illegal HBT traceback");
+    if (chosenSites && chosenSites->size() != topology.hbtNodes.size()) throw std::logic_error("HBT site traceback size differs");
+    for (std::size_t i = 0; i < topology.hbtNodes.size(); i++) {
+        int node = topology.hbtNodes[i];
+        int site = chosenSites ? chosenSites->at(i) : hbt.availableSiteAt(result.positions.at(node));
+        if (site < 0 || hbt.owner(site) != -1 || hbt.point(site) != result.positions.at(node)) throw std::runtime_error("Illegal HBT traceback");
         result.hbtSites.push_back(site);
     }
     for (const auto& edge : topology.tree.getEdges()) {
@@ -326,7 +329,12 @@ LocationResult HbtLocationOptimizer::runPaperImpl(const AssignedTopology& topolo
                 std::max(regions[child][axis].low, std::min(regions[child][axis].high, result.continuousPositions[node][axis]));
         }
     }
-    finish(result, topology, hbt);
+    auto finishPaper = [&]() {
+        std::vector<int> chosen;
+        for (int node : topology.hbtNodes) chosen.push_back(sites[node][selected[node]]);
+        finish(result, topology, hbt, &chosen);
+    };
+    finishPaper();
     result.paperWirelengthBeforeTieBreak = result.wirelength;
     result.paperSitesBeforeTieBreak = std::set<int>(result.hbtSites.begin(), result.hbtSites.end()).size();
     if (coalesceTies && result.paperSitesBeforeTieBreak > 1) {
@@ -393,7 +401,7 @@ LocationResult HbtLocationOptimizer::runPaperImpl(const AssignedTopology& topolo
                 choices[node][selected[node]] = restrictedChoices[node][selected[node]];
             }
             result.paperTieMerges.push_back(std::move(merge));
-            finish(result, topology, hbt);
+            finishPaper();
             if (result.wirelength != result.paperWirelengthBeforeTieBreak || trialSites.size() != std::set<int>(result.hbtSites.begin(), result.hbtSites.end()).size()) {
                 throw std::logic_error("Coalescing tie-break violated the original placement objective");
             }
@@ -433,7 +441,7 @@ LocationResult HbtLocationOptimizer::runPaperImpl(const AssignedTopology& topolo
     }
     for (const auto& edge : topology.tree.getEdges()) result.continuousWirelength = add(result.continuousWirelength,
         utils::Dist(result.continuousPositions[edge.u], result.continuousPositions[edge.v]));
-    finish(result, topology, hbt);
+    finishPaper();
     return result;
 }
 

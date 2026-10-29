@@ -8,9 +8,13 @@ namespace h3d {
 
 class HbtGrid {
 public:
-    HbtGrid(std::vector<DBU> xs, std::vector<DBU> ys, const std::vector<int>& blocked = {});
+    HbtGrid(std::vector<DBU> xs, std::vector<DBU> ys, const std::vector<int>& blocked = {},
+            bool allowCoincidentRepresentatives = false);
     utils::PointT<DBU> point(int site) const;
     int siteAt(utils::PointT<DBU> position) const;
+    // Distinct physical HBTs may have one optimization/GCell representative.
+    // Their IDs and owners remain distinct; select an actually free resource.
+    int availableSiteAt(utils::PointT<DBU> position) const;
     int owner(int site) const { return owners.at(site); }
     int available() const { return quads.front().available; }
     int size() const { return owners.size(); }

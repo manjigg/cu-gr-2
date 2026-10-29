@@ -123,6 +123,58 @@ void checkLocationDp() {
     require(failed, "An exhausted HBT array must not silently reuse an occupied site");
 }
 
+void checkCoincidentRepresentatives() {
+    // Twenty distinct physical resources represented by fewer GCell positions.
+    HbtGrid grid({0, 0, 10, 10, 20}, {0, 0, 10, 20}, {0}, true);
+    require(grid.size() == 20 && grid.available() == 19, "Projection dropped physical HBT resources");
+    std::mt19937 random(209);
+    for (int trial = 0; trial < 40; trial++) {
+        int site = random() % grid.size();
+        if (grid.owner(site) == -1) grid.occupy({site}, 7);
+        else if (grid.owner(site) == 7) grid.release({site}, 7);
+        utils::BoxT<DBU> box(5, 5, 15, 15);
+        std::vector<int> inside;
+        int count = 0;
+        for (int i = 0; i < grid.size(); i++) if (grid.owner(i) == -1) {
+            count++;
+            auto p = grid.point(i);
+            if (direction(p.x, box.x) == 0 && direction(p.y, box.y) == 0) inside.push_back(i);
+        }
+        require(grid.available() == count && grid.within(box) == inside, "Coincident range/ownership accounting differs");
+        for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) {
+            if (!dx && !dy) continue;
+            DBU best = std::numeric_limits<DBU>::max();
+            std::vector<int> wanted;
+            for (int i = 0; i < grid.size(); i++) if (grid.owner(i) == -1) {
+                auto p = grid.point(i);
+                if (direction(p.x, box.x) != dx || direction(p.y, box.y) != dy) continue;
+                DBU cost = utils::Dist(box, p);
+                if (cost < best) { best = cost; wanted.clear(); }
+                if (cost == best) wanted.push_back(i);
+            }
+            require(grid.nearestAll(box, dx, dy) == wanted, "Coincident directional query lost a legal site");
+        }
+    }
+    HbtGrid resources({0, 0}, {0}, {}, true), routing({0}, {0});
+    AssignedTopology tree;
+    tree.tree.addNode({0, 0});
+    tree.tree.addNode({0, 0}, {{Die::Bottom, 0, 0}});
+    tree.tree.addNode({0, 0}, {{Die::Top, 1, 0}});
+    tree.tree.addEdge(0, 1); tree.tree.addEdge(0, 2);
+    tree.hbtNodes = {0}; tree.edgeDies = {Die::Bottom, Die::Top};
+    auto first = HbtLocationOptimizer().runPaper(tree, resources, routing, 0, false);
+    resources.occupy(first.hbtSites, 1);
+    auto second = HbtLocationOptimizer().runPaper(tree, resources, routing, 0, false);
+    require(first.hbtSites != second.hbtSites && first.positions == second.positions,
+            "Two nets cannot independently use physical sites sharing an optimization point");
+    resources.occupy(second.hbtSites, 2);
+    require(resources.available() == 0, "Coincident sites were incorrectly deduplicated or double counted");
+    bool exhausted = false;
+    try { HbtLocationOptimizer().runPaper(tree, resources, routing, 0, false); }
+    catch (const std::runtime_error&) { exhausted = true; }
+    require(exhausted, "An exhausted coincident grid reused another net's physical resource");
+}
+
 DBU brutePlacement(const AssignedTopology& tree, const HbtGrid& hbt, const HbtGrid& routing, int maxSites) {
     const auto& nodes = tree.tree.getNodes();
     std::set<int> hbts(tree.hbtNodes.begin(), tree.hbtNodes.end());
@@ -224,7 +276,7 @@ void checkExactAndBudgetRepairs() {
 
 int main() {
     try {
-        checkGrid(); checkLocationDp(); checkExactAndBudgetRepairs();
+        checkGrid(); checkLocationDp(); checkExactAndBudgetRepairs(); checkCoincidentRepresentatives();
         std::cout << "HBT quadtree, ownership, placement DP, fixed pins, merge and exhaustion checks passed.\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n'; return 1;

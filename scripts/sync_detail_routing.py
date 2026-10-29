@@ -185,7 +185,7 @@ def setup():
                                            'created_at_utc': now(), 'sync_interval_seconds': 30})
     (TARGET / 'README.md').write_text('''# 当前代码的详细布线结果副本
 
-原任务在 OpenROAD 目录的独立后台 worker 中运行。本目录是实际文件副本，不是符号链接。
+原任务由独立 OpenROAD 后台 worker 执行。本目录是实际文件副本，不是符号链接。
 每个任务完成后复制 DEF、最终/中间 DRC、日志、命令、耗时、压缩几何和独立验证报告，并核对 SHA-256。
 
 - 项目根目录 `detail-routing.csv`：每个 benchmark 一行，仅列两侧合计线长、普通 via 数、HBT 数、DRC、耗时及最终状态。
@@ -202,12 +202,15 @@ def setup():
 
 原始 command/status/provenance 文件中的 OpenROAD 路径保留用于追溯；本地成果位置以根目录 CSV 的 output_directory 为准。
 自动管理的 CSV 会持续刷新；请勿在同步期间修改本目录中的结果副本，程序检测到人工改动会拒绝覆盖并记录错误。
-''')
+'''.replace('detail-routing.csv', CSV.name))
     finished = synchronize()
     if finished:
         return
     with (TARGET / 'sync.log').open('x') as stream:
-        child = subprocess.Popen([sys.executable, '-B', str(TARGET / 'sync.py'), 'watch'],
+        child = subprocess.Popen([sys.executable, '-B', str(TARGET / 'sync.py'), 'watch',
+                                  '--source', str(SOURCE), '--destination', str(TARGET), '--csv', str(CSV)],
+                                 # Explicit paths keep a copied watcher on the
+                                 # selected experiment, rather than 3um defaults.
                                  cwd=PROJECT, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
     atomic_json(TARGET / 'launcher.json', {'pid': child.pid, 'launched_at_utc': now()})
     print(json.dumps({'sync_worker_pid': child.pid, 'destination': str(TARGET), 'csv': str(CSV)}, ensure_ascii=False))
@@ -227,5 +230,9 @@ def watch():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('setup', 'watch', 'once'))
+    parser.add_argument('--source', type=Path, default=SOURCE)
+    parser.add_argument('--destination', type=Path, default=TARGET)
+    parser.add_argument('--csv', type=Path, default=CSV)
     a = parser.parse_args()
+    SOURCE, TARGET, CSV = a.source.resolve(), a.destination.resolve(), a.csv.resolve()
     setup() if a.phase == 'setup' else watch() if a.phase == 'watch' else synchronize()

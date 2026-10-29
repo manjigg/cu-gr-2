@@ -12,11 +12,12 @@ DBU distance(const utils::BoxT<DBU>& a, const utils::BoxT<DBU>& b) {
 }
 }
 
-HbtGrid::HbtGrid(std::vector<DBU> x, std::vector<DBU> y, const std::vector<int>& blocked):
+HbtGrid::HbtGrid(std::vector<DBU> x, std::vector<DBU> y, const std::vector<int>& blocked,
+                 bool allowCoincidentRepresentatives):
     xs(std::move(x)), ys(std::move(y)) {
     for (const auto* axis : {&xs, &ys}) {
         if (axis->empty() || !std::is_sorted(axis->begin(), axis->end()) ||
-            std::adjacent_find(axis->begin(), axis->end()) != axis->end()) {
+            (!allowCoincidentRepresentatives && std::adjacent_find(axis->begin(), axis->end()) != axis->end())) {
             throw std::invalid_argument("Site grid axes must be nonempty and strictly increasing");
         }
     }
@@ -39,6 +40,16 @@ int HbtGrid::siteAt(utils::PointT<DBU> p) const {
     auto y = std::lower_bound(ys.begin(), ys.end(), p.y);
     if (x == xs.end() || y == ys.end() || *x != p.x || *y != p.y) return -1;
     return (y - ys.begin()) * xs.size() + x - xs.begin();
+}
+
+int HbtGrid::availableSiteAt(utils::PointT<DBU> p) const {
+    auto xr = std::equal_range(xs.begin(), xs.end(), p.x);
+    auto yr = std::equal_range(ys.begin(), ys.end(), p.y);
+    for (auto y = yr.first; y != yr.second; ++y) for (auto x = xr.first; x != xr.second; ++x) {
+        int site = (y - ys.begin()) * xs.size() + x - xs.begin();
+        if (owners[site] == -1) return site;
+    }
+    return -1;
 }
 
 int HbtGrid::build(int xl, int xh, int yl, int yh, int parent) {

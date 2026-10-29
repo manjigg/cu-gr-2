@@ -234,6 +234,11 @@ def main():
     collapsed.update(pitch_dbu=[1000, 1000], blocked_sites=[])
     execute("colliding_grid_projection", collapsed, method="paper", expected_success=False,
             expected_error="HBT sites do not map injectively to the uniform grid")
+    dense = copy.deepcopy(collapsed)
+    dense["allow_coincident_hbt_grid_points"] = True
+    report = execute("dense_physical_sites", dense, method="paper", reimport=True)
+    assert report["initial_available_hbt_sites"] == 16, "Coincident GCells must not reduce physical capacity"
+    assert any(report["physical_configuration"]["hbt_projected_axis_duplicates"]), "Dense fixture must exercise coincident representatives"
 
     exhausted = copy.deepcopy(base)
     exhausted["blocked_sites"] = [[x, y] for y in range(4) for x in range(4)]
