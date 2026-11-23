@@ -13,6 +13,7 @@ public:
         read(parameters.lef_file, parameters.def_file);
         setUnitCosts();
     }
+    Design(const Parameters& params, const std::string& lef, const std::string& def);
     DBU getLibDBU() const { return libDBU; }
 
     CostT getUnitLengthWireCost() const { return unit_length_wire_cost; }
@@ -21,11 +22,18 @@ public:
     
     int getNumLayers() const { return layers.size(); }
     const MetalLayer& getLayer(int layerIndex) const { return layers[layerIndex]; }
+    bool canUseVia(int lowerLayer) const {
+        return legalVias.empty() || legalVias.at(lowerLayer);
+    }
+    bool hasExplicitViaTopology() const { return !legalVias.empty(); }
     void getPinShapes(const PinReference& pinRef, vector<BoxOnLayer>& pinShapes) const;
     
     // For global routing 
     const vector<vector<DBU>>& getGridlines() const { return gridlines; }
     const vector<Net>& getAllNets() const { return nets; }
+    const utils::BoxT<DBU>& getDieRegion() const { return dieRegion; }
+    const Instance& getInstance(int index) const { return instances.at(index); }
+    const robin_hood::unordered_map<std::string, std::string>& getPortNetNames() const { return portNetNames; }
     void getAllObstacles(vector<vector<utils::BoxT<DBU>>>& allObstacles, bool skipM1 = true) const;
     
 private:
@@ -34,10 +42,12 @@ private:
     DBU libDBU;
     utils::BoxT<DBU> dieRegion;
     vector<MetalLayer> layers;
+    vector<bool> legalVias;
     vector<Macro> macros; // macros with a SPECIFIC orientation
     vector<Instance> instances;
     vector<Net> nets;
     vector<BoxOnLayer> obstacles;
+    robin_hood::unordered_map<std::string, std::string> portNetNames;
     
     // For detailed routing
     CostT unit_length_wire_cost;
@@ -49,5 +59,6 @@ private:
     vector<vector<DBU>> gridlines;
     
     void read(std::string lef_file, std::string def_file);
+    void extract(Rsyn::Design rsynDesign, Rsyn::PhysicalDesign physicalDesign);
     void setUnitCosts();
 };

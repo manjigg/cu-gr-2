@@ -21,6 +21,9 @@ GridGraph::GridGraph(const Design& design, const Parameters& params): libDBU(des
     layerNames.resize(nLayers);
     layerDirections.resize(nLayers);
     layerMinLengths.resize(nLayers);
+    legalVias.resize(nLayers - 1);
+    explicitViaTopology = design.hasExplicitViaTopology();
+    for (int l = 0; l + 1 < nLayers; ++l) legalVias[l] = design.canUseVia(l);
     for (int layerIndex = 0; layerIndex < nLayers; layerIndex++) {
         const auto& layer = design.getLayer(layerIndex);
         layerNames[layerIndex] = layer.getName();
@@ -234,20 +237,94 @@ CostT GridGraph::getWireCost(const int layerIndex, const utils::PointT<int> u, c
 }
 
 CostT GridGraph::getViaCost(const int layerIndex, const utils::PointT<int> loc) const {
-    assert(layerIndex + 1 < nLayers);
     CostT cost = unit_via_cost;
-    // Estimated wire cost to satisfy min-area
+    visitViaWires(layerIndex, loc, [&](int layer, const utils::PointT<int>& lower, CapacityT demand) {
+        cost += getWireCost(layer, lower, demand);
+    });
+    return cost;
+}
+
+void GridGraph::visitViaWires(int layerIndex, const utils::PointT<int>& loc,
+                              const std::function<void(int, const utils::PointT<int>&, CapacityT)>& visit) const {
+    assert(layerIndex >= 0 && layerIndex + 1 < nLayers && canUseVia(layerIndex));
     for (int l = layerIndex; l <= layerIndex + 1; l++) {
         unsigned direction = layerDirections[l];
         utils::PointT<int> lowerLoc = loc;
         lowerLoc[direction] -= 1;
         DBU lowerEdgeLength = loc[direction] > 0 ? getEdgeLength(direction, lowerLoc[direction]) : 0;
         DBU higherEdgeLength = loc[direction] < getSize(direction) - 1 ? getEdgeLength(direction, loc[direction]) : 0;
+        if (lowerEdgeLength + higherEdgeLength == 0 || layerMinLengths[l] == 0) continue;
         CapacityT demand = (CapacityT) layerMinLengths[l] / (lowerEdgeLength + higherEdgeLength) * parameters.via_multiplier;
-        if (lowerEdgeLength > 0) cost += getWireCost(l, lowerLoc, demand);
-        if (higherEdgeLength > 0) cost += getWireCost(l, loc, demand);
+        if (lowerEdgeLength > 0) visit(l, lowerLoc, demand);
+        if (higherEdgeLength > 0) visit(l, loc, demand);
+    }
+}
+
+CostT GridGraph::getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const {
+    CostT cost = 0;
+    GRTreeNode::preorder(tree, [&](const std::shared_ptr<GRTreeNode>& node) {
+        for (const auto& child : node->children) {
+            if (node->layerIdx == child->layerIdx) {
+                cost += getWireCost(node->layerIdx, *node, *child);
+            } else {
+                for (int l = std::min(node->layerIdx, child->layerIdx);
+                     l < std::max(node->layerIdx, child->layerIdx); ++l) {
+                    cost += getViaCost(l, *node);
+                }
+            }
+        }
+    });
+    return cost;
+}
+
+vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& components) const {
+    robin_hood::unordered_set<uint64_t> seen;
+    vector<RouteStep> steps;
+    auto add = [&](const GRPoint& lower, bool via) {
+        if (seen.insert(2 * hashCell(lower) + via).second) steps.push_back({lower, via});
+    };
+    for (const auto& component : components) {
+        GRTreeNode::preorder(component.getRoutingTree(), [&](const std::shared_ptr<GRTreeNode>& node) {
+            for (const auto& child : node->children) {
+                GRPoint lower = *node;
+                if (node->layerIdx != child->layerIdx) {
+                    for (lower.layerIdx = std::min(node->layerIdx, child->layerIdx);
+                         lower.layerIdx < std::max(node->layerIdx, child->layerIdx); ++lower.layerIdx) {
+                        add(lower, true);
+                    }
+                } else {
+                    const auto axis = getLayerDirection(node->layerIdx);
+                    for (lower[axis] = std::min((*node)[axis], (*child)[axis]);
+                         lower[axis] < std::max((*node)[axis], (*child)[axis]); ++lower[axis]) {
+                        add(lower, false);
+                    }
+                }
+            }
+        });
+    }
+    return steps;
+}
+
+CostT GridGraph::getForestCost(const vector<GRNet>& components) const {
+    if (components.size() == 1) return getTreeCost(components.front().getRoutingTree());
+    CostT cost = 0;
+    for (const auto& step : collectForestSteps(components)) {
+        const auto& point = step.point;
+        cost += step.via ? getViaCost(point.layerIdx, point) : getWireCost(point.layerIdx, point);
     }
     return cost;
+}
+
+void GridGraph::commitForest(const vector<GRNet>& components, bool reverse) {
+    if (components.size() == 1) {
+        commitTree(components.front().getRoutingTree(), reverse);
+        return;
+    }
+    for (const auto& step : collectForestSteps(components)) {
+        const auto& point = step.point;
+        if (step.via) commitVia(point.layerIdx, point, reverse);
+        else commitWire(point.layerIdx, point, reverse);
+    }
 }
 
 void GridGraph::selectAccessPoints(GRNet& net, robin_hood::unordered_map<uint64_t, std::pair<utils::PointT<int>, utils::IntervalT<int>>>& selectedAccessPoints) const {
@@ -288,12 +365,17 @@ void GridGraph::selectAccessPoints(GRNet& net, robin_hood::unordered_map<uint64_
             selectedAccessPoints.emplace(hash, std::make_pair(selectedPoint, utils::IntervalT<int>()));
         }
         utils::IntervalT<int>& fixedLayerInterval = selectedAccessPoints[hash].second;
+        if (explicitViaTopology) {
+            fixedLayerInterval.Update(accessPoints[bestIndex].layerIdx);
+            continue;
+        }
         for (const auto& point : accessPoints) {
             if (point.x == selectedPoint.x && point.y == selectedPoint.y) {
                 fixedLayerInterval.Update(point.layerIdx);
             }
         }
     }
+    if (explicitViaTopology) return;
     // Extend the fixed layers to 2 layers higher to facilitate track switching
     for (auto& accessPoint : selectedAccessPoints) {
         utils::IntervalT<int>& fixedLayers = accessPoint.second.second;
@@ -308,6 +390,7 @@ void GridGraph::commit(const int layerIndex, const utils::PointT<int> lower, con
 void GridGraph::commitWire(const int layerIndex, const utils::PointT<int> lower, const bool reverse) {
     unsigned direction = layerDirections[layerIndex];
     DBU edgeLength = getEdgeLength(direction, lower[direction]);
+    graphEdges[layerIndex][lower.x][lower.y].wireDemand += reverse ? -1 : 1;
     if (reverse) {
         commit(layerIndex, lower, -1);
         totalLength -= edgeLength;
@@ -317,18 +400,22 @@ void GridGraph::commitWire(const int layerIndex, const utils::PointT<int> lower,
     }
 }
 
-void GridGraph::commitVia(const int layerIndex, const utils::PointT<int> loc, const bool reverse) {
-    assert(layerIndex + 1 < nLayers);
-    for (int l = layerIndex; l <= layerIndex + 1; l++) {
-        unsigned direction = layerDirections[l];
-        utils::PointT<int> lowerLoc = loc;
-        lowerLoc[direction] -= 1;
-        DBU lowerEdgeLength = loc[direction] > 0 ? getEdgeLength(direction, lowerLoc[direction]) : 0;
-        DBU higherEdgeLength = loc[direction] < getSize(direction) - 1 ? getEdgeLength(direction, loc[direction]) : 0;
-        CapacityT demand = (CapacityT) layerMinLengths[l] / (lowerEdgeLength + higherEdgeLength) * parameters.via_multiplier;
-        if (lowerEdgeLength > 0) commit(l, lowerLoc, (reverse ? -demand : demand));
-        if (higherEdgeLength > 0) commit(l, loc, (reverse ? -demand : demand));
+CapacityT GridGraph::getTotalWireOverflow() const {
+    CapacityT overflow = 0;
+    for (int l = parameters.min_routing_layer; l < nLayers; ++l) {
+        for (const auto& column : graphEdges[l]) {
+            for (const auto& edge : column) {
+                overflow += std::max(0.0, edge.wireDemand - std::max(0.0, edge.capacity));
+            }
+        }
     }
+    return overflow;
+}
+
+void GridGraph::commitVia(const int layerIndex, const utils::PointT<int> loc, const bool reverse) {
+    visitViaWires(layerIndex, loc, [&](int layer, const utils::PointT<int>& lower, CapacityT demand) {
+        commit(layer, lower, reverse ? -demand : demand);
+    });
     if (reverse) totalNumVias -= 1;
     else totalNumVias += 1;
 }
@@ -392,6 +479,28 @@ int GridGraph::checkOverflow(const std::shared_ptr<GRTreeNode>& tree) const {
         }
     });
     return num;
+}
+
+bool GridGraph::hasResourceOverflow(const std::shared_ptr<GRTreeNode>& tree) const {
+    if (!tree) return false;
+    bool overflow = false;
+    GRTreeNode::preorder(tree, [&](const std::shared_ptr<GRTreeNode>& node) {
+        if (overflow) return;
+        for (const auto& child : node->children) {
+            if (node->layerIdx == child->layerIdx) {
+                overflow = checkOverflow(node->layerIdx, *node, *child) > 0;
+            } else {
+                for (int l = std::min(node->layerIdx, child->layerIdx);
+                     l < std::max(node->layerIdx, child->layerIdx) && !overflow; ++l) {
+                    visitViaWires(l, *node, [&](int layer, const utils::PointT<int>& lower, CapacityT) {
+                        overflow = overflow || checkOverflow(layer, lower.x, lower.y);
+                    });
+                }
+            }
+            if (overflow) return;
+        }
+    });
+    return overflow;
 }
 
 

@@ -87,3 +87,7 @@ private:
     
     vector<std::shared_ptr<Solution>> solutions;
 };
+// Routes on actual layers of one die. F2F routing anchors each side at the
+// matching endpoint of an HBT edge and compares complete two-sided plans.
+std::shared_ptr<GRTreeNode> routeLayeredMaze(const GRNet& net, const GridGraph& graph,
+                                          int minLayer, const GRPoint* landing);

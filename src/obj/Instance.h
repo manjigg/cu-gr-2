@@ -28,6 +28,7 @@ public:
         index(idx), name(_name), macroIndex(macroIndex), position(pos), type(CELL) {}
     Instance(int idx, std::string _name, const Rsyn::PhysicalPort& phyPort);
     bool isCell() const { return type == CELL; }
+    const std::string& getName() const { return name; }
     int getMacroIndex() const { return macroIndex; }
     utils::PointT<DBU> getPosition() const { return position; }
     const BoxOnLayer& getPort() const { return port; }

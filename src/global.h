@@ -51,6 +51,7 @@ struct Parameters {
     std::string lef_file;
     std::string def_file;
     std::string out_file;
+    std::string f2f_config;
     int threads = 1;
     // 
     const double weight_wire_length = 0.5;
@@ -78,12 +79,17 @@ struct Parameters {
             exit(1);
         }
         for (int i = 1; i < argc; i++) {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(std::string("Missing value for ") + argv[i]);
+            }
             if (strcmp(argv[i], "-lef") == 0) {
                 lef_file = argv[++i];
             } else if (strcmp(argv[i], "-def") == 0) {
                 def_file = argv[++i];
             } else if (strcmp(argv[i], "-output") == 0) {
                 out_file = argv[++i];
+            } else if (strcmp(argv[i], "-f2f") == 0) {
+                f2f_config = argv[++i];
             } else if (strcmp(argv[i], "-threads") == 0) {
                 threads = std::stoi(argv[++i]);
             } else {

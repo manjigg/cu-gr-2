@@ -51,7 +51,7 @@ public:
         net(_net), gridGraph(graph), parameters(param), numDagNodes(0) {}
     void constructSteinerTree();
     void constructRoutingDAG();
-    void constructDetours(GridGraphView<bool>& congestionView);
+    void constructDetours(const GridGraphView<bool>& congestionView);
     void run();
     void setSteinerTree(std::shared_ptr<SteinerTreeNode> tree) { steinerTree = tree; }
     

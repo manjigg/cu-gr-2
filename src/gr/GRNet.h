@@ -11,6 +11,14 @@ public:
     std::string getName() const { return name; }
     int getNumPins() const { return pinAccessPoints.size(); }
     const vector<vector<GRPoint>>& getPinAccessPoints() const { return pinAccessPoints; }
+    void addAccessPoint(const GRPoint& point) {
+        addPinAccessPoints({point});
+    }
+    void addPinAccessPoints(const vector<GRPoint>& points) {
+        pinAccessPoints.push_back(points);
+        for (const auto& point : points) boundingBox.Update(point);
+    }
+    explicit GRNet(std::string name) : index(-1), name(std::move(name)) {}
     const utils::BoxT<int>& getBoundingBox() const { return boundingBox; }
     const std::shared_ptr<GRTreeNode>& getRoutingTree() const { return routingTree; }
     // void getGuides(vector<std::pair<int, utils::BoxT<int>>>& guides) const;

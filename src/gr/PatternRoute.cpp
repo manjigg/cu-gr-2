@@ -128,6 +128,7 @@ void PatternRoute::constructSteinerTree() {
             }
         }
         constructTree(steinerTree, -1, root);
+        std::free(flutetree.branch);
     }
 }
 
@@ -304,7 +305,7 @@ void PatternRoute::constructPaths(std::shared_ptr<PatternRoutingNode>& start, st
     }
 }
 
-void PatternRoute::constructDetours(GridGraphView<bool>& congestionView) {
+void PatternRoute::constructDetours(const GridGraphView<bool>& congestionView) {
     struct ScaffoldNode {
         std::shared_ptr<PatternRoutingNode> node;
         vector<std::shared_ptr<ScaffoldNode>> children;
@@ -587,7 +588,10 @@ void PatternRoute::calculateRoutingCosts(std::shared_ptr<PatternRoutingNode>& no
     vector<CostT> viaCosts(gridGraph.getNumLayers());
     viaCosts[0] = 0;
     for (int layerIndex = 1; layerIndex < gridGraph.getNumLayers(); layerIndex++) {
-        viaCosts[layerIndex] = viaCosts[layerIndex - 1] + gridGraph.getViaCost(layerIndex - 1, *node);
+        viaCosts[layerIndex] = viaCosts[layerIndex - 1];
+        if (gridGraph.canUseVia(layerIndex - 1)) {
+            viaCosts[layerIndex] += gridGraph.getViaCost(layerIndex - 1, *node);
+        }
     }
     utils::IntervalT<int> fixedLayers = node->fixedLayers;
     fixedLayers.low = min(fixedLayers.low, static_cast<int>(gridGraph.getNumLayers()) - 1);
@@ -601,6 +605,7 @@ void PatternRoute::calculateRoutingCosts(std::shared_ptr<PatternRoutingNode>& no
             bestPaths.assign(node->paths.size(), {-1, -1});
         }
         for (int layerIndex = lowLayerIndex; layerIndex < gridGraph.getNumLayers(); layerIndex++) {
+            if (layerIndex > lowLayerIndex && !gridGraph.canUseVia(layerIndex - 1)) break;
             for (int childIndex = 0; childIndex < node->paths.size(); childIndex++) {
                 if (childCosts[childIndex][layerIndex].first < minChildCosts[childIndex]) {
                     minChildCosts[childIndex] = childCosts[childIndex][layerIndex].first;
@@ -617,6 +622,7 @@ void PatternRoute::calculateRoutingCosts(std::shared_ptr<PatternRoutingNode>& no
             }
         }
         for (int layerIndex = gridGraph.getNumLayers() - 2; layerIndex >= lowLayerIndex; layerIndex--) {
+            if (!gridGraph.canUseVia(layerIndex)) continue;
             if (node->costs[layerIndex + 1] < node->costs[layerIndex]) {
                 node->costs[layerIndex] = node->costs[layerIndex + 1];
                 node->bestPaths[layerIndex] = node->bestPaths[layerIndex + 1];
@@ -635,6 +641,7 @@ std::shared_ptr<GRTreeNode> PatternRoute::getRoutingTree(std::shared_ptr<Pattern
             }
         }
     }
+    if (parentLayerIndex < 0) return nullptr;
     std::shared_ptr<GRTreeNode> routingNode = std::make_shared<GRTreeNode>(parentLayerIndex, node->x, node->y);
     std::shared_ptr<GRTreeNode> lowestRoutingNode = routingNode;
     std::shared_ptr<GRTreeNode> highestRoutingNode = routingNode;

@@ -1,4 +1,61 @@
 #include "Design.h"
+#include "rsyn/io/parser/lef_def/DEFControlParser.h"
+#include "rsyn/io/parser/lef_def/LEFControlParser.h"
+#include "rsyn/io/reader/PopulateRsyn.h"
+
+namespace {
+struct DieNetlistReader : Rsyn::PopulateRsyn {
+    using Rsyn::PopulateRsyn::populateRsyn;
+};
+}
+
+Design::Design(const Parameters& params, const std::string& lef, const std::string& def)
+    : parameters(params) {
+    if (!std::ifstream(lef) || !std::ifstream(def)) {
+        throw std::runtime_error("Cannot open die input: " + lef + ", " + def);
+    }
+    LefDscp library;
+    DefDscp layout;
+    LEFControlParser().parseLEF(lef, library);
+    DEFControlParser().parseDEF(def, layout);
+    if (!layout.clsDatabaseUnits || library.clsLefUnitsDscp.clsDatabase != layout.clsDatabaseUnits) {
+        throw std::runtime_error("F2F import requires matching LEF and DEF DBU within each die: " + def);
+    }
+    for (const auto& port : layout.clsPorts) portNetNames.emplace(port.clsName, port.clsNetName);
+    Rsyn::Design logical(def);
+    DieNetlistReader().populateRsyn(library, layout, logical);
+    Rsyn::PhysicalDesign physical(nullptr);
+    physical.initPhysicalDesign(logical, {{"clsEnableMergeRectangles", false},
+                                         {"clsEnableNetPinBoundaries", true}});
+    physical.loadLibrary(library);
+    physical.loadDesign(layout);
+    extract(logical, physical);
+    setUnitCosts();
+    legalVias.assign(layers.size() - 1, false);
+    auto addVia = [&](int a, int b) {
+        if (a >= 0 && b >= 0 && std::max(a, b) < layers.size() && std::abs(a - b) == 1) {
+            legalVias[std::min(a, b)] = true;
+        }
+    };
+    for (const auto& via : physical.allPhysicalVias()) {
+        const auto lower = via.getBottomLayer();
+        const auto upper = via.getTopLayer();
+        if (lower && upper && lower.getType() == Rsyn::ROUTING && upper.getType() == Rsyn::ROUTING) {
+            addVia(lower.getRelativeIndex(), upper.getRelativeIndex());
+        }
+    }
+    for (const auto& rule : library.clsLefViaRuleDscps) {
+        if (!rule.clsIsGenerate) continue;
+        vector<int> routing;
+        for (const auto& layer : rule.clsLayers) {
+            const auto physicalLayer = physical.getPhysicalLayerByName(layer.clsName);
+            if (physicalLayer && physicalLayer.getType() == Rsyn::ROUTING) {
+                routing.push_back(physicalLayer.getRelativeIndex());
+            }
+        }
+        if (routing.size() == 2) addVia(routing[0], routing[1]);
+    }
+}
 
 void Design::read(std::string lef_file, std::string def_file) {
     log() << "parsing..." << std::endl;
@@ -13,6 +70,10 @@ void Design::read(std::string lef_file, std::string def_file) {
     Rsyn::PhysicalService* physicalService = session.getService("rsyn.physical");
     Rsyn::PhysicalDesign physicalDesign= physicalService->getPhysicalDesign();
     Rsyn::Design rsynDesign = session.getDesign();
+    extract(rsynDesign, physicalDesign);
+}
+
+void Design::extract(Rsyn::Design rsynDesign, Rsyn::PhysicalDesign physicalDesign) {
     Rsyn::Module rsynModule = rsynDesign.getTopModule();
     
     libDBU = physicalDesign.getDatabaseUnits(Rsyn::LIBRARY_DBU);
@@ -88,11 +149,12 @@ void Design::read(std::string lef_file, std::string def_file) {
             } else {
                 auto p = instanceIndices.find(rsynPin.getInstance().getName());
                 if (p == instanceIndices.end()) {
-                    log() << "Error: cannot find instance " << rsynPin.getInstance().getName() << std::endl;
+                    throw std::runtime_error("Cannot find instance " + rsynPin.getInstance().getName());
                 }
                 int instanceIndex = p->second;
                 Macro& macro = macros[instances[instanceIndex].getMacroIndex()];
                 auto pinIndex = macro.getPinIndex(rsynPin.getName());
+                if (pinIndex < 0) throw std::runtime_error("Cannot resolve pin " + rsynPin.getName());
                 net.addPinRef(instanceIndex, pinIndex);
             }
         }
@@ -183,9 +245,10 @@ void Design::read(std::string lef_file, std::string def_file) {
     gridlines.resize(2);
     if (physicalDesign.allPhysicalGCell().empty()) {
         for (unsigned dimension = 0; dimension < 2; dimension++) {
-             const int low = dieRegion[dimension].low;
-             const int high = dieRegion[dimension].high;
-             for (int i = low; i + defaultGridlineSpacing < high; i += defaultGridlineSpacing) {
+             const DBU low = dieRegion[dimension].low;
+             const DBU high = dieRegion[dimension].high;
+             gridlines[dimension].push_back(low);
+             for (DBU i = low + defaultGridlineSpacing; i + defaultGridlineSpacing < high; i += defaultGridlineSpacing) {
                  gridlines[dimension].push_back(i);
              }
              if (gridlines[dimension].back() != high)
@@ -224,6 +287,9 @@ void Design::read(std::string lef_file, std::string def_file) {
 }
 
 void Design::setUnitCosts() {
+    if (layers.size() < 2 || layers[1].getPitch() <= 0) {
+        throw std::runtime_error("Design needs at least two routing layers and a valid second-layer track pitch");
+    }
     DBU m2_pitch = layers[1].getPitch();
     unit_length_wire_cost = parameters.weight_wire_length / m2_pitch;
     unit_via_cost = parameters.weight_via_number;

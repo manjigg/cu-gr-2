@@ -10,6 +10,7 @@ template <typename Type> class GridGraphView;
 struct GraphEdge {
     CapacityT capacity;
     CapacityT demand;
+    CapacityT wireDemand = 0;
     GraphEdge(): capacity(0), demand(0) {}
     CapacityT getResource() const { return capacity - demand; }
 };
@@ -19,6 +20,9 @@ public:
     GridGraph(const Design& design, const Parameters& params);
     inline DBU getLibDBU() const { return libDBU; }
     inline DBU getM2Pitch() const { return m2_pitch; }
+    DBU getCommittedWireLength() const { return totalLength; }
+    int getCommittedViaCount() const { return totalNumVias; }
+    CapacityT getTotalWireOverflow() const;
     inline unsigned getNumLayers() const { return nLayers; }
     inline unsigned getSize(unsigned dimension) const { return (dimension ? ySize : xSize); }
     inline std::string getLayerName(int layerIndex) const { return layerNames[layerIndex]; }
@@ -37,6 +41,9 @@ public:
     DBU getEdgeLength(unsigned direction, unsigned edgeIndex) const;
     CostT getWireCost(const int layerIndex, const utils::PointT<int> u, const utils::PointT<int> v) const;
     CostT getViaCost(const int layerIndex, const utils::PointT<int> loc) const;
+    bool canUseVia(int lowerLayer) const { return legalVias[lowerLayer]; }
+    CostT getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const;
+    CostT getForestCost(const vector<GRNet>& components) const;
     inline CostT getUnitViaCost() const { return unit_via_cost; }
     
     // Misc
@@ -44,11 +51,13 @@ public:
     
     // Methods for updating demands 
     void commitTree(const std::shared_ptr<GRTreeNode>& tree, const bool reverse = false);
+    void commitForest(const vector<GRNet>& components, bool reverse);
     
     // Checks
     inline bool checkOverflow(const int layerIndex, const int x, const int y) const { return getEdge(layerIndex, x, y).getResource() < 0.0; }
     int checkOverflow(const int layerIndex, const utils::PointT<int> u, const utils::PointT<int> v) const; // Check wire overflow
     int checkOverflow(const std::shared_ptr<GRTreeNode>& tree) const; // Check routing tree overflow (Only wires are checked)
+    bool hasResourceOverflow(const std::shared_ptr<GRTreeNode>& tree) const;
     std::string getPythonString(const std::shared_ptr<GRTreeNode>& routingTree) const;
     
     // 2D maps
@@ -73,6 +82,8 @@ private:
     vector<std::string> layerNames;
     vector<unsigned> layerDirections;
     vector<DBU> layerMinLengths;
+    vector<bool> legalVias;
+    bool explicitViaTopology;
     
     // Unit costs
     CostT unit_length_wire_cost;
@@ -97,11 +108,18 @@ private:
     
     inline double logistic(const CapacityT& input, const double slope) const;
     CostT getWireCost(const int layerIndex, const utils::PointT<int> lower, const CapacityT demand = 1.0) const;
+    void visitViaWires(int layer, const utils::PointT<int>& loc,
+                       const std::function<void(int, const utils::PointT<int>&, CapacityT)>& visit) const;
     
     // Methods for updating demands 
     void commit(const int layerIndex, const utils::PointT<int> lower, const CapacityT demand);
     void commitWire(const int layerIndex, const utils::PointT<int> lower, const bool reverse = false);
     void commitVia(const int layerIndex, const utils::PointT<int> loc, const bool reverse = false);
+    struct RouteStep {
+        GRPoint point;
+        bool via;
+    };
+    vector<RouteStep> collectForestSteps(const vector<GRNet>& components) const;
 };
 
 template <typename Type>

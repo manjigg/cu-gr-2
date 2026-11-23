@@ -3,8 +3,9 @@
 #include "MazeRoute.h"
 #include <chrono>
 
-GlobalRouter::GlobalRouter(const Design& design, const Parameters& params): 
+GlobalRouter::GlobalRouter(const Design& design, const Parameters& params, bool buildNetlist):
     gridGraph(design, params), parameters(params) {
+    if (!buildNetlist) return;
     // Instantiate the global routing netlist
     const vector<Net>& baseNets = design.getAllNets();
     nets.reserve(baseNets.size());
@@ -311,21 +312,7 @@ void GlobalRouter::write(std::string guide_file) {
     areaOfPinPatches = 0;
     areaOfWirePatches = 0;
     std::stringstream ss;
-    for (const GRNet& net : nets) {
-        vector<std::pair<int, utils::BoxT<int>>> guides;
-        getGuides(net, guides);
-        
-        ss << net.getName() << std::endl;
-        ss << "(" << std::endl;
-        for (const auto& guide : guides) {
-            ss << gridGraph.getGridline(0, guide.second.x.low) << " "
-                 << gridGraph.getGridline(1, guide.second.y.low) << " "
-                 << gridGraph.getGridline(0, guide.second.x.high + 1) << " "
-                 << gridGraph.getGridline(1, guide.second.y.high + 1) << " "
-                 << gridGraph.getLayerName(guide.first) << std::endl;
-        }
-        ss << ")" << std::endl;
-    }
+    for (const GRNet& net : nets) writeNetGuide(ss, net);
     log() << "total area of pin access patches: " << areaOfPinPatches << std::endl;
     log() << "total area of wire segment patches: " << areaOfWirePatches << std::endl;
     log() << std::endl;
@@ -334,4 +321,44 @@ void GlobalRouter::write(std::string guide_file) {
     fout << ss.str();
     fout.close();
     log() << "finished writing output..." << std::endl;
+}
+
+void GlobalRouter::writeNetGuide(std::ostream& out, const GRNet& net, const GRPoint* landing,
+                                 bool includeIsolatedRoot) {
+    vector<std::pair<int, utils::BoxT<int>>> guides;
+    getGuides(net, guides);
+    if (landing) guides.emplace_back(landing->layerIdx, utils::BoxT<int>(landing->x, landing->y));
+    const auto& root = net.getRoutingTree();
+    if (includeIsolatedRoot && guides.empty() && root && root->children.empty()) {
+        guides.emplace_back(root->layerIdx, utils::BoxT<int>(root->x, root->y));
+    }
+    writeGuideBoxes(out, net.getName(), guides);
+}
+
+void GlobalRouter::writeNetGuides(std::ostream& out, const std::string& name,
+                                  const vector<GRNet>& components, const vector<GRPoint>& landings) {
+    vector<std::pair<int, utils::BoxT<int>>> guides;
+    for (const auto& component : components) {
+        const auto before = guides.size();
+        getGuides(component, guides);
+        const auto& root = component.getRoutingTree();
+        if (guides.size() == before && root && root->children.empty()) {
+            guides.emplace_back(root->layerIdx, utils::BoxT<int>(root->x, root->y));
+        }
+    }
+    for (const auto& point : landings) guides.emplace_back(point.layerIdx, utils::BoxT<int>(point.x, point.y));
+    writeGuideBoxes(out, name, guides);
+}
+
+void GlobalRouter::writeGuideBoxes(std::ostream& out, const std::string& name,
+                                   const vector<std::pair<int, utils::BoxT<int>>>& guides) const {
+    out << name << "\n(\n";
+    for (const auto& guide : guides) {
+        out << gridGraph.getGridline(0, guide.second.x.low) << " "
+            << gridGraph.getGridline(1, guide.second.y.low) << " "
+            << gridGraph.getGridline(0, guide.second.x.high + 1) << " "
+            << gridGraph.getGridline(1, guide.second.y.high + 1) << " "
+            << gridGraph.getLayerName(guide.first) << "\n";
+    }
+    out << ")\n";
 }

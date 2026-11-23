@@ -262,3 +262,136 @@ std::shared_ptr<SteinerTreeNode> MazeRoute::getSteinerTree() const {
     });
     return tree;
 }
+namespace {
+
+std::shared_ptr<GRTreeNode> searchLayers(const GRNet& net, const GridGraph& graph,
+                                         int minLayer, const GRPoint* landing, int stride, int margin) {
+    const auto& pins = net.getPinAccessPoints();
+    if (pins.empty()) return nullptr;
+    std::array<vector<int>, 2> coordinates;
+    for (int axis = 0; axis < 2; ++axis) {
+        const int size = graph.getSize(axis);
+        const auto& bounds = net.getBoundingBox()[axis];
+        const int low = margin < 0 ? 0 : std::max(0, bounds.low - margin);
+        const int high = margin < 0 ? size - 1 : std::min(size - 1, bounds.high + margin);
+        for (int line = low; line < high; line += stride) coordinates[axis].push_back(line);
+        for (const auto& pin : pins) {
+            for (const auto& access : pin) coordinates[axis].push_back(access[axis]);
+        }
+        auto& lines = coordinates[axis];
+        lines.push_back(high);
+        std::sort(lines.begin(), lines.end());
+        lines.erase(std::unique(lines.begin(), lines.end()), lines.end());
+    }
+
+    const auto& xs = coordinates[0];
+    const auto& ys = coordinates[1];
+    const std::size_t plane = xs.size() * ys.size();
+    const int layers = graph.getNumLayers();
+    const std::size_t numVertices = plane * layers;
+    auto vertex = [&](const GRPoint& point) {
+        const auto xi = std::lower_bound(xs.begin(), xs.end(), point.x) - xs.begin();
+        const auto yi = std::lower_bound(ys.begin(), ys.end(), point.y) - ys.begin();
+        return point.layerIdx * plane + yi * xs.size() + xi;
+    };
+    auto position = [&](std::size_t index) {
+        return GRPoint(index / plane, xs[index % plane % xs.size()], ys[index % plane / xs.size()]);
+    };
+
+    robin_hood::unordered_map<std::size_t, vector<std::size_t>> pinVertices;
+    for (std::size_t pin = 0; pin < pins.size(); ++pin) {
+        for (const auto& access : pins[pin]) pinVertices[vertex(access)].push_back(pin);
+    }
+    vector<bool> connected(pins.size(), false);
+    std::size_t remaining = pins.size();
+    auto attach = [&](std::size_t index) {
+        auto found = pinVertices.find(index);
+        if (found == pinVertices.end()) return;
+        for (auto pin : found->second) {
+            if (!connected[pin]) {
+                connected[pin] = true;
+                --remaining;
+            }
+        }
+    };
+
+    const auto source = vertex(landing ? *landing : pins.front().front());
+    auto tree = std::make_shared<GRTreeNode>(position(source));
+    robin_hood::unordered_map<std::size_t, std::shared_ptr<GRTreeNode>> treeNodes;
+    treeNodes.emplace(source, tree);
+    attach(source);
+    const auto none = std::numeric_limits<std::size_t>::max();
+    vector<CostT> costs(numVertices, std::numeric_limits<CostT>::infinity());
+    vector<std::size_t> prev(numVertices, none);
+
+    using QueueItem = std::pair<CostT, std::size_t>;
+    std::priority_queue<QueueItem, vector<QueueItem>, std::greater<QueueItem>> queue;
+    costs[source] = 0;
+    queue.emplace(0, source);
+    while (remaining && !queue.empty()) {
+        const auto current = queue.top();
+        queue.pop();
+        const auto index = current.second;
+        if (current.first > costs[index]) continue;
+        const auto before = remaining;
+        attach(index);
+        if (before != remaining && !treeNodes.count(index)) {
+            vector<std::size_t> path;
+            auto next = index;
+            while (!treeNodes.count(next)) {
+                path.push_back(next);
+                next = prev[next];
+            }
+            auto parent = treeNodes.at(next);
+            for (auto it = path.rbegin(); it != path.rend(); ++it) {
+                auto node = std::make_shared<GRTreeNode>(position(*it));
+                parent->children.push_back(node);
+                treeNodes.emplace(*it, node);
+                parent = node;
+                costs[*it] = 0;
+                queue.emplace(0, *it);
+                attach(*it);
+            }
+            continue;
+        }
+
+        const auto point = position(index);
+        auto relax = [&](std::size_t next, CostT edgeCost) {
+            const CostT cost = current.first + edgeCost;
+            if (cost >= costs[next]) return;
+            costs[next] = cost;
+            prev[next] = index;
+            queue.emplace(cost, next);
+        };
+        if (point.layerIdx >= minLayer) {
+            const unsigned axis = graph.getLayerDirection(point.layerIdx);
+            const auto slot = axis == MetalLayer::H ? index % plane % xs.size() : index % plane / xs.size();
+            const auto step = axis == MetalLayer::H ? 1 : xs.size();
+            if (slot > 0) {
+                relax(index - step, graph.getWireCost(point.layerIdx, point, position(index - step)));
+            }
+            if (slot + 1 < coordinates[axis].size()) {
+                relax(index + step, graph.getWireCost(point.layerIdx, point, position(index + step)));
+            }
+        }
+        if (point.layerIdx > 0 && graph.canUseVia(point.layerIdx - 1)) {
+            relax(index - plane, graph.getViaCost(point.layerIdx - 1, point));
+        }
+        if (point.layerIdx + 1 < layers && graph.canUseVia(point.layerIdx)) {
+            relax(index + plane, graph.getViaCost(point.layerIdx, point));
+        }
+    }
+    return remaining ? nullptr : tree;
+}
+
+} // namespace
+
+std::shared_ptr<GRTreeNode> routeLayeredMaze(const GRNet& net, const GridGraph& graph,
+                                          int minLayer, const GRPoint* landing) {
+    for (const auto& sampling : {std::make_pair(10, 15), std::make_pair(4, 32),
+                                 std::make_pair(10, -1), std::make_pair(1, -1)}) {
+        auto tree = searchLayers(net, graph, minLayer, landing, sampling.first, sampling.second);
+        if (tree) return tree;
+    }
+    return nullptr;
+}
