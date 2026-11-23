@@ -1,0 +1,54 @@
+{
+  "cross_die_net_count": 381,
+  "dbu_per_micron": 2000,
+  "dies": {
+    "bottom": {
+      "cells": 5665,
+      "local_nets": 5828,
+      "ports": 0,
+      "routing_grid": [
+        72,
+        72,
+        7
+      ],
+      "routing_layers": [
+        "metal1",
+        "metal2",
+        "metal3",
+        "metal4",
+        "metal5",
+        "metal6",
+        "metal7"
+      ]
+    },
+    "top": {
+      "cells": 7493,
+      "local_nets": 7711,
+      "ports": 0,
+      "routing_grid": [
+        72,
+        72,
+        7
+      ],
+      "routing_layers": [
+        "metal1",
+        "metal2",
+        "metal3",
+        "metal4",
+        "metal5",
+        "metal6",
+        "metal7"
+      ]
+    }
+  },
+  "hbt_resources_initialized": true,
+  "initialization_seconds": 0.355019723,
+  "legal_hbt_capacity": 2254,
+  "method_profile": "paper",
+  "mode": "full_routing",
+  "native_manifest_endpoint_check": "not_requested",
+  "original_endpoint_count": 50671,
+  "original_net_count": 13158,
+  "physical_pad_geometry_provided": true,
+  "random_seed": 0
+}
