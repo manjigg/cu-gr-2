@@ -15,6 +15,13 @@ struct GraphEdge {
     CapacityT getResource() const { return capacity - demand; }
 };
 
+struct ForestMetrics {
+    double wirelengthUm = 0, wireCost = 0, viaCost = 0, congestionCost = 0;
+    double wireOverflowDelta = 0, resourceOverflowDelta = 0;
+    int vias = 0, duplicateWires = 0, duplicateVias = 0;
+    double duplicateWirelengthUm = 0;
+};
+
 class GridGraph {
 public:
     GridGraph(const Design& design, const Parameters& params);
@@ -23,6 +30,7 @@ public:
     DBU getCommittedWireLength() const { return totalLength; }
     int getCommittedViaCount() const { return totalNumVias; }
     CapacityT getTotalWireOverflow() const;
+    CapacityT getMaxWireOverflow() const;
     inline unsigned getNumLayers() const { return nLayers; }
     inline unsigned getSize(unsigned dimension) const { return (dimension ? ySize : xSize); }
     inline std::string getLayerName(int layerIndex) const { return layerNames[layerIndex]; }
@@ -44,6 +52,7 @@ public:
     bool canUseVia(int lowerLayer) const { return legalVias[lowerLayer]; }
     CostT getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const;
     CostT getForestCost(const vector<GRNet>& components) const;
+    ForestMetrics measureForest(const vector<GRNet>& components, bool includeOverflow = true) const;
     inline CostT getUnitViaCost() const { return unit_via_cost; }
     
     // Misc
@@ -119,7 +128,8 @@ private:
         GRPoint point;
         bool via;
     };
-    vector<RouteStep> collectForestSteps(const vector<GRNet>& components) const;
+    vector<RouteStep> collectForestSteps(const vector<GRNet>& components,
+                                         ForestMetrics* metrics = nullptr) const;
 };
 
 template <typename Type>

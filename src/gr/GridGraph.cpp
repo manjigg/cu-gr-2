@@ -277,11 +277,23 @@ CostT GridGraph::getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const {
     return cost;
 }
 
-vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& components) const {
+vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& components,
+                                                         ForestMetrics* metrics) const {
     robin_hood::unordered_set<uint64_t> seen;
     vector<RouteStep> steps;
     auto add = [&](const GRPoint& lower, bool via) {
-        if (seen.insert(2 * hashCell(lower) + via).second) steps.push_back({lower, via});
+        if (seen.insert(2 * hashCell(lower) + via).second) {
+            steps.push_back({lower, via});
+        } else if (metrics) {
+            if (via) ++metrics->duplicateVias;
+            else {
+                ++metrics->duplicateWires;
+                const auto axis = getLayerDirection(lower.layerIdx);
+                metrics->duplicateWirelengthUm += double(getEdgeLength(axis, lower[axis])) / libDBU;
+            }
+            // 诊断基线仍复现单树原有逐边提交口径。
+            if (components.size() == 1) steps.push_back({lower, via});
+        }
     };
     for (const auto& component : components) {
         GRTreeNode::preorder(component.getRoutingTree(), [&](const std::shared_ptr<GRTreeNode>& node) {
@@ -303,6 +315,53 @@ vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& 
         });
     }
     return steps;
+}
+
+ForestMetrics GridGraph::measureForest(const vector<GRNet>& components, bool includeOverflow) const {
+    ForestMetrics result;
+    struct Demand {
+        GRPoint point;
+        CapacityT wire = 0, total = 0;
+    };
+    robin_hood::unordered_map<uint64_t, Demand> increments;
+    auto wire = [&](int layer, const utils::PointT<int>& p, CapacityT demand, bool isWire) {
+        const GRPoint lower(layer, p.x, p.y);
+        const auto axis = getLayerDirection(layer);
+        const DBU length = getEdgeLength(axis, p[axis]);
+        // 与现有 Wire 计价的 DBU 截断相同，便于逐项核对原目标。
+        const DBU demandLength = demand * length;
+        const double base = demandLength * unit_length_wire_cost;
+        result.wireCost += base;
+        result.congestionCost += getWireCost(layer, p, demand) - base;
+        if (isWire) result.wirelengthUm += double(length) / libDBU;
+        if (includeOverflow) {
+            auto& entry = increments.emplace(hashCell(lower), Demand{lower}).first->second;
+            entry.total += demand;
+            if (isWire) entry.wire += demand;
+        }
+    };
+    for (const auto& step : collectForestSteps(components, &result)) {
+        const auto& p = step.point;
+        if (step.via) {
+            ++result.vias;
+            result.viaCost += unit_via_cost;
+            visitViaWires(p.layerIdx, p, [&](int l, const utils::PointT<int>& xy, CapacityT demand) {
+                wire(l, xy, demand, false);
+            });
+        } else {
+            wire(p.layerIdx, p, 1, true);
+        }
+    }
+    auto overflowDelta = [](CapacityT before, CapacityT added, CapacityT capacity) {
+        return std::max(0.0, before + added - capacity) - std::max(0.0, before - capacity);
+    };
+    for (const auto& item : increments) {
+        const auto& inc = item.second;
+        const auto edge = getEdge(inc.point.layerIdx, inc.point.x, inc.point.y);
+        result.wireOverflowDelta += overflowDelta(edge.wireDemand, inc.wire, std::max(0.0, edge.capacity));
+        result.resourceOverflowDelta += overflowDelta(edge.demand, inc.total, edge.capacity);
+    }
+    return result;
 }
 
 CostT GridGraph::getForestCost(const vector<GRNet>& components) const {
@@ -410,6 +469,18 @@ CapacityT GridGraph::getTotalWireOverflow() const {
         }
     }
     return overflow;
+}
+
+CapacityT GridGraph::getMaxWireOverflow() const {
+    CapacityT worst = 0;
+    for (int l = parameters.min_routing_layer; l < nLayers; ++l) {
+        for (const auto& column : graphEdges[l]) {
+            for (const auto& edge : column) {
+                worst = std::max(worst, edge.wireDemand - std::max(0.0, edge.capacity));
+            }
+        }
+    }
+    return worst;
 }
 
 void GridGraph::commitVia(const int layerIndex, const utils::PointT<int> loc, const bool reverse) {

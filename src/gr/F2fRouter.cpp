@@ -3,6 +3,7 @@
 #include "MazeRoute.h"
 #include "PatternRoute.h"
 #include <array>
+#include <boost/filesystem.hpp>
 #include <chrono>
 #include <map>
 
@@ -12,6 +13,37 @@ using XY = utils::PointT<DBU>;
 using Box = utils::BoxT<DBU>;
 using Json = Rsyn::Json;
 enum Die { Top, Bottom };
+
+class Diagnostics {
+public:
+    explicit Diagnostics(const Json& config) {
+        const auto path = config.value("diagnostics", std::string());
+        if (path.empty()) return;
+        const auto output = boost::filesystem::absolute(path).lexically_normal();
+        for (const auto& other : {config.at("top").at("guide").get<std::string>(),
+                                  config.at("bottom").at("guide").get<std::string>(),
+                                  config.at("hbt_output").get<std::string>(),
+                                  config.at("top").at("def").get<std::string>(),
+                                  config.at("bottom").at("def").get<std::string>(),
+                                  config.at("top").at("lef").get<std::string>(),
+                                  config.at("bottom").at("lef").get<std::string>()}) {
+            if (output == boost::filesystem::absolute(other).lexically_normal() ||
+                (boost::filesystem::exists(output) && boost::filesystem::exists(other) &&
+                 boost::filesystem::equivalent(output, other))) {
+                throw std::runtime_error("F2F diagnostics must not overwrite an input or routing output");
+            }
+        }
+        stream.open(path);
+        if (!stream) throw std::runtime_error("Cannot open F2F diagnostics: " + path);
+    }
+    bool enabled() const { return stream.is_open(); }
+    void write(const Json& event) {
+        stream << event.dump() << '\n';
+        if (!stream) throw std::runtime_error("Cannot write F2F diagnostics");
+    }
+private:
+    std::ofstream stream;
+};
 
 XY point(const Json& value) {
     if (!value.is_array() || value.size() != 2 ||
@@ -109,12 +141,13 @@ public:
     CostT hbtCost;
     DBU packageDbu;
     RTree siteIndex;
+    Diagnostics diagnostics;
 
     F2fGraph(const Parameters& params, const Json& config)
         : dies{{DieGrid(params, config.at("top"), config.at("package_dbu").get<DBU>()),
                 DieGrid(params, config.at("bottom"), config.at("package_dbu").get<DBU>())}},
           hbtCost(config.at("hbt").value("cost", 4.0)),
-          packageDbu(config.at("package_dbu").get<DBU>()) {
+          packageDbu(config.at("package_dbu").get<DBU>()), diagnostics(config) {
         const auto& hbt = config.at("hbt");
         const XY origin = point(hbt.at("origin"));
         const XY pitch = point(hbt.at("pitch"));
@@ -315,6 +348,27 @@ vector<Job> buildJobs(F2fGraph& graph, const Json& config) {
 
 enum class Stage { Pattern, Detour, Maze };
 
+int phase(Stage stage) { return 1 + static_cast<int>(stage); }
+
+Json routeDiagnostics(const RoutedNet& route, F2fGraph& graph, bool includeOverflow = true) {
+    Json sides = Json::array();
+    double total = graph.hbtCost * route.sites.size();
+    for (int d = Top; d <= Bottom; ++d) {
+        const auto stat = graph.dies[d].graph().measureForest(route.components[d], includeOverflow);
+        total += stat.wireCost + stat.viaCost + stat.congestionCost;
+        sides.push_back({{"wire_um", stat.wirelengthUm}, {"vias", stat.vias},
+                         {"wire_cost", stat.wireCost}, {"via_cost", stat.viaCost},
+                         {"congestion_cost", stat.congestionCost},
+                         {"wire_overflow_delta", stat.wireOverflowDelta},
+                         {"resource_overflow_delta", stat.resourceOverflowDelta},
+                         {"duplicate_wires", stat.duplicateWires},
+                         {"duplicate_wire_um", stat.duplicateWirelengthUm},
+                         {"duplicate_vias", stat.duplicateVias}});
+    }
+    return {{"sites", route.sites}, {"dies", sides}, {"cost", total},
+            {"hbt_cost", graph.hbtCost * route.sites.size()}};
+}
+
 struct Terminal {
     int die;
     int pin;
@@ -359,6 +413,7 @@ struct ProjectedNode {
 vector<ProjectedNode> projectSteiner(const Job& job, F2fGraph& graph) {
     std::map<std::pair<DBU, DBU>, vector<Terminal>> pins;
     for (int d = Top; d <= Bottom; ++d) {
+        if (!job.sides[d]) continue;
         auto& die = graph.dies[d];
         const auto& accesses = job.sides[d]->getPinAccessPoints();
         for (int p = 0; p < accesses.size(); ++p) {
@@ -514,35 +569,54 @@ RoutedNet evaluateTopology(const Topology& topology, const vector<int>& sites, c
 RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& params, Stage stage,
                   const std::array<GridGraphView<bool>, 2>& congestion) {
     RoutedNet best;
+    int single = 0, multi = 0, unavailable = 0, incomplete = 0;
     auto evaluate = [&](const Topology& topology, const vector<int>& sites) {
         auto plan = evaluateTopology(topology, sites, job, graph, params, stage, congestion);
+        single += sites.size() == 1;
+        multi += sites.size() > 1;
+        if (graph.diagnostics.enabled()) {
+            Json event = {{"type", "candidate"}, {"net", id}, {"stage", phase(stage)}, {"sites", sites},
+                          {"feasible", std::isfinite(plan.cost)}, {"score", plan.cost}};
+            if (std::isfinite(plan.cost)) event["metrics"] = routeDiagnostics(plan, graph);
+            graph.diagnostics.write(event);
+        }
         if (plan.cost < best.cost || (plan.cost == best.cost && sites.size() < best.sites.size())) {
             best = std::move(plan);
         }
     };
+    auto finish = [&] {
+        if (graph.diagnostics.enabled()) {
+            graph.diagnostics.write({{"type", "search"}, {"net", id}, {"stage", phase(stage)},
+                {"single_evaluated", single}, {"multi_evaluated", multi}, {"empty_site_lists", unavailable},
+                {"incomplete_combinations", incomplete}, {"feasible", std::isfinite(best.cost)}});
+        }
+        return std::move(best);
+    };
     const auto base = oneCrossing(job);
     if (!job.crosses()) {
         evaluate(base, {});
-        return best;
+        return finish();
     }
     const std::size_t limit = stage == Stage::Pattern ? 8 : 20;
     auto baseOptions = job.fixedSite >= 0 ? vector<int>{job.fixedSite}
                                          : graph.candidates(job.searchRegion, id, limit);
+    unavailable += baseOptions.empty();
     if (job.fixedSite < 0 && job.route.sites.size() == 1 &&
         std::find(baseOptions.begin(), baseOptions.end(), job.route.sites.front()) == baseOptions.end()) {
         baseOptions.push_back(job.route.sites.front());
     }
     for (int site : baseOptions) evaluate(base, {site});
 
-    if (job.sides[Top]->getNumPins() + job.sides[Bottom]->getNumPins() <= 2) return best;
+    if (job.sides[Top]->getNumPins() + job.sides[Bottom]->getNumPins() <= 2) return finish();
     const auto tree = projectSteiner(job, graph);
-    if (tree.empty()) return best;
+    if (tree.empty()) return finish();
     for (bool pinAffinity : {false, true}) {
         auto topology = labelTopology(tree, pinAffinity);
         if (topology.crossings.size() < 2 || graph.hbtCost * topology.crossings.size() >= best.cost) continue;
         vector<vector<int>> options;
         for (const auto& crossing : topology.crossings) {
             options.push_back(graph.candidates(crossing.region, id, limit));
+            unavailable += options.back().empty();
         }
         int fixedCrossing = -1;
         if (job.fixedSite >= 0) {
@@ -575,9 +649,10 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
                 sites.push_back(*candidate);
             }
             if (sites.size() == options.size()) evaluate(topology, sites);
+            else ++incomplete;
         }
     }
-    return best;
+    return finish();
 }
 
 void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
@@ -591,6 +666,18 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
         }
         for (int i = 0; i < jobs.size(); ++i) {
             auto& job = jobs[i];
+            if (graph.diagnostics.enabled() && stage == Stage::Pattern) {
+                const auto projection = projectSteiner(job, graph);
+                DBU length = 0;
+                for (const auto& n : projection) for (int child : n.children) {
+                    length += utils::Dist(n.point, projection[child].point);
+                }
+                const auto count = [&](int d) { return job.sides[d] ? job.sides[d]->getNumPins() : 0; };
+                const auto name = [&](int d) { return job.sides[d] ? job.sides[d]->getName() : std::string(); };
+                graph.diagnostics.write({{"type", "net"}, {"net", i}, {"top", name(Top)}, {"bottom", name(Bottom)},
+                    {"pins", {count(Top), count(Bottom)}}, {"projected_rsmt_um",
+                    projection.empty() ? Json() : Json(double(length) / graph.packageDbu)}});
+            }
             if (stage != Stage::Pattern) {
                 bool overflow = false;
                 for (int d = Top; d <= Bottom; ++d) {
@@ -598,7 +685,13 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
                         overflow |= graph.dies[d].graph().hasResourceOverflow(component.getRoutingTree());
                     }
                 }
-                if (!overflow) continue;
+                if (!overflow) {
+                    if (graph.diagnostics.enabled()) {
+                        graph.diagnostics.write({{"type", "decision"}, {"net", i}, {"stage", phase(stage)},
+                            {"action", "untouched"}, {"sites", job.route.sites}});
+                    }
+                    continue;
+                }
                 graph.apply(i, job.route, true);
             }
             RoutedNet plan;
@@ -609,12 +702,23 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
                 throw;
             }
             if (!std::isfinite(plan.cost)) {
+                if (graph.diagnostics.enabled()) {
+                    graph.diagnostics.write({{"type", "decision"}, {"net", i}, {"stage", phase(stage)},
+                        {"action", stage == Stage::Pattern ? "failed" : "restore_infeasible"},
+                        {"sites", job.route.sites}});
+                }
                 if (stage != Stage::Pattern) {
                     graph.apply(i, job.route, false);
                     continue;
                 }
                 const auto& net = job.sides[Top] ? job.sides[Top] : job.sides[Bottom];
                 throw std::runtime_error("No feasible route for " + net->getName());
+            }
+            if (graph.diagnostics.enabled()) {
+                Json event = {{"type", "decision"}, {"net", i}, {"stage", phase(stage)}, {"action", "accept"},
+                              {"sites", plan.sites}, {"new", routeDiagnostics(plan, graph)}};
+                if (stage != Stage::Pattern) event["old"] = routeDiagnostics(job.route, graph);
+                graph.diagnostics.write(event);
             }
             if (!job.route.sites.empty() && job.route.sites != plan.sites) ++moved;
             job.route = std::move(plan);
@@ -623,6 +727,16 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
         }
         log() << "F2F routing stage " << static_cast<int>(stage) + 1 << ": "
               << routed << " routes committed, " << moved << " nets changed HBT assignments\n";
+        if (graph.diagnostics.enabled()) {
+            Json dies = Json::array();
+            for (auto& die : graph.dies) {
+                const auto& grid = die.graph();
+                dies.push_back({{"wire_um", double(grid.getCommittedWireLength()) / grid.getLibDBU()},
+                                {"vias", grid.getCommittedViaCount()}, {"wire_overflow", grid.getTotalWireOverflow()},
+                                {"max_wire_overflow", grid.getMaxWireOverflow()}});
+            }
+            graph.diagnostics.write({{"type", "stage"}, {"stage", phase(stage)}, {"dies", dies}});
+        }
     }
 }
 
