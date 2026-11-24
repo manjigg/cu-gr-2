@@ -1,4 +1,4 @@
-"""Run unchanged benchmark DEFs with the supplied prior experiment's HBT array."""
+"""Run unchanged benchmark DEFs with an explicit, reproducible HBT array."""
 import argparse
 import concurrent.futures
 import csv
@@ -12,8 +12,17 @@ import time
 CASES = ['aes', 'tinyRocket', 'ethmac', 'mor1kx', 'jpegencode', 'ariane', 'bp']
 
 
-def design_manifest(reference, seconds):
+def design_manifest(reference, seconds, case=None):
     old = json.loads(reference.read_text())
+    expected = {}
+    if 'lef_by_case' in old:
+        root = (reference.parent/old['benchmarks']).resolve()
+        for side,suffix in [('top','top'),('bottom','btm')]:
+            lef = old['lef_by_case'][case]
+            design = f'{case}/{case}_{suffix}_hbt.place.def'
+            old[side] = dict(lef=str(root/lef), layer=old['landing_layer'], **{'def':str(root/design)})
+            for name in (lef,design):
+                expected[str(root/name)] = old['input_sha256'][name]
     if not old.get('paired_ports'):
         raise ValueError('Expected a paired-port experiment')
     die_inputs, boundaries, ports, fingerprints = [], [], [], {}
@@ -33,6 +42,8 @@ def design_manifest(reference, seconds):
             raise ValueError('This adapter handles the original identity-transform experiment only')
         die_inputs.append(dict(lef=d['lef'], **{'def': str(path)}, via_capacity='track_intersections',
                                transform=dict(axes=[0, 1], signs=[1, 1], offset=[0, 0])))
+    if expected and fingerprints != expected:
+        raise ValueError('Original benchmark fingerprint mismatch for '+case)
     if ports[0] != ports[1] or not ports[0] or len(set(ports[0].values())) != len(ports[0]):
         raise ValueError('Ambiguous cut-port identities')
     mapping = []
@@ -74,7 +85,8 @@ def main():
     def run(case):
         job = out/case
         job.mkdir()
-        manifest = design_manifest((args.references/case/'f2f.json').resolve(), args.stage_seconds)
+        source = args.references if args.references.is_file() else args.references/case/'f2f.json'
+        manifest = design_manifest(source.resolve(), args.stage_seconds,case)
         manifest['seed_seconds'] = args.seed_seconds
         config = job/'manifest.json'
         config.write_text(json.dumps(manifest, separators=(',', ':')))
@@ -88,22 +100,27 @@ def main():
         stats = json.loads(stats_path.read_text()) if stats_path.exists() else {}
         inventory = stats.get('inventory', {})
         metrics = stats.get('metrics') or {}
-        return dict(benchmark=case, status=stats.get('status', 'PROCESS_ERROR'), exit_code=proc.returncode,
+        record=dict(benchmark=case, status=stats.get('status', 'PROCESS_ERROR'), exit_code=proc.returncode,
                     global_nets=inventory.get('global_nets'), real_pins=inventory.get('real_pins'),
                     cross_die=len(manifest['mapping']), legal_sites=len(manifest['bonding']['sites']),
                     wirelength_um=metrics.get('wirelength_um'), via_count=metrics.get('via_count'),
                     used_hbt=metrics.get('used_hbt'), wire_overflow=metrics.get('wire_overflow'), drc=None,
                     wall_seconds=round(elapsed, 3), max_rss_kb=(job/'rss.kb').read_text().splitlines()[-1])
+        (job/'process.json').write_text(json.dumps(record,indent=2)+'\n')
+        return record
 
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool, (out/'summary.tsv').open('w') as stream:
         writer = None
+        failed = False
         for row in pool.map(run, args.cases):
+            failed |= row['exit_code'] != 0
             if writer is None:
                 writer = csv.DictWriter(stream, fieldnames=row.keys(), delimiter='\t')
                 writer.writeheader()
             writer.writerow(row)
             stream.flush()
+    return int(failed)
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

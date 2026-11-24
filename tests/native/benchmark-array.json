@@ -1,0 +1,45 @@
+{
+  "benchmarks": "../../benchmarks",
+  "package_dbu": 2000,
+  "paired_ports": true,
+  "landing_layer": "metal7",
+  "hbt": {
+    "origin": [
+      3000,
+      3000
+    ],
+    "pitch": [
+      6000,
+      6000
+    ],
+    "min_spacing": 6000,
+    "cost": 4.0
+  },
+  "lef_by_case": {
+    "aes": "NangateOpenCellLibraryWithMacro.lef",
+    "tinyRocket": "NangateOpenCellLibraryWithMacro.lef",
+    "ethmac": "NangateOpenCellLibraryWithoutMacro.lef",
+    "mor1kx": "NangateOpenCellLibraryWithoutMacro.lef",
+    "jpegencode": "NangateOpenCellLibraryWithoutMacro.lef",
+    "ariane": "NangateOpenCellLibraryWithMacro.lef",
+    "bp": "NangateOpenCellLibraryWithMacro.lef"
+  },
+  "input_sha256": {
+    "aes/aes_top_hbt.place.def": "9d5b98b197894f794c08de9322a57b9663b7cb88fa2d0f8e8ca021c11b4fe901",
+    "NangateOpenCellLibraryWithMacro.lef": "ed3b0df1b8936444472edab78b8df7a755075f0ac9f356818593d6b6a59d40b6",
+    "aes/aes_btm_hbt.place.def": "7b265a98c26b15b71deb47836c3defdcca98f7af6eae5009dafef609e649d679",
+    "tinyRocket/tinyRocket_top_hbt.place.def": "bee256291f1dbeb82004561b1e7d1e5b56ce2982eaa3d2fc309ad16286c84445",
+    "tinyRocket/tinyRocket_btm_hbt.place.def": "f4dac57fc54e08c6fa2fa3cf7e8efe3e374a48cd3cb5353c0466e3518399f8d7",
+    "ethmac/ethmac_top_hbt.place.def": "7399bf7f5f58a75b81c5847565470e64bc95c4d1ae5c86be03a2eb286519eaa6",
+    "NangateOpenCellLibraryWithoutMacro.lef": "ccf0bcd2887780db29c9d9ffb94ae58421d5385b45c2a8ffc0610c91536259d3",
+    "ethmac/ethmac_btm_hbt.place.def": "2ef09bc4446b740974829bef226440af99c9188a99920c0cf7bdbac818fb55b9",
+    "mor1kx/mor1kx_top_hbt.place.def": "5ae5a551da7a3c35d6847454f840a665e9b4c63e745e8dd2a306461ca7b7284b",
+    "mor1kx/mor1kx_btm_hbt.place.def": "3e13b629f6af64c9b8c8ba6a6e03f7dbf6bb3e6bdbd8f2b5218a5673d5b2d8d5",
+    "jpegencode/jpegencode_top_hbt.place.def": "1a7cae45b0a9cee9949604c76310968b7f34b26bb0088d5abc47d0170ee3e8b9",
+    "jpegencode/jpegencode_btm_hbt.place.def": "c8944b86ebf1feda6b82a6e73cafa0555f121491ac0a0be3bfc2b778e8614ccf",
+    "ariane/ariane_top_hbt.place.def": "b61bba2853eac376266399238e08122591a5739c88ab686f567946f7f3d33a2f",
+    "ariane/ariane_btm_hbt.place.def": "c0b492023a64ec8c6568bb8ab83b674e9455010b3967b77fde249b2976c73556",
+    "bp/bp_top_hbt.place.def": "5da4ac9d3d793fbf432ce6e9eaf6bbbaa01eb8eb873e18660c1f4ad57519a12e",
+    "bp/bp_btm_hbt.place.def": "62aabe5aded1db201848c7e6db439e9ac2a154fd822d23243e31fe3b22e10704"
+  }
+}

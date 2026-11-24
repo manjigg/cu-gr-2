@@ -7,6 +7,23 @@ import sys
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(root/'scripts'))
+from native_bench import design_manifest
+
+protocol=root/'tests/native/benchmark-array.json'
+official=design_manifest(protocol,15,'aes')
+assert len(official['bonding']['sites'])==2601 and len(official['mapping'])==381
+with tempfile.TemporaryDirectory() as temp:
+    broken=json.loads(protocol.read_text())
+    broken['benchmarks']=str(root/'benchmarks')
+    broken['input_sha256']['aes/aes_top_hbt.place.def']='0'*64
+    path=pathlib.Path(temp)/'invalid.json'
+    path.write_text(json.dumps(broken))
+    try:
+        design_manifest(path,15,'aes')
+        raise AssertionError('Unverified paired-PORT input accepted')
+    except ValueError as error:
+        assert 'fingerprint' in str(error)
 binary = pathlib.Path(sys.argv[1]).resolve()
 config_file = root/'tests/native/aes-input.json'
 config = json.loads(config_file.read_text())

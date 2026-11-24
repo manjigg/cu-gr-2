@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import concurrent.futures
+from native_joint import verify_routes
 
 
 def section(text, name):
@@ -26,6 +27,30 @@ def section(text, name):
     return items, match.span()
 
 
+def resolve_instances(text, components):
+    """Match Rsyn instance names to raw DEF tokens, keeping the original spelling for output."""
+    raw_names=section(text,'COMPONENTS')[0].keys()
+    aliases={}
+    for raw in raw_names:
+        decoded=re.sub(r'\\(.)',r'\1',raw)
+        if decoded!=raw:
+            if decoded in raw_names or decoded in aliases:
+                raise ValueError('Ambiguous escaped component name '+decoded)
+            aliases[decoded]=raw
+    claimed={}
+    for c in components:
+        pins=[]
+        for inst,pin in c['pins']:
+            if inst=='PIN':
+                pins.append((inst,pin))
+                continue
+            raw=aliases.get(inst,inst)
+            if raw not in raw_names or claimed.setdefault(raw,inst)!=inst:
+                raise ValueError('Unknown or non-bijective DEF component '+inst)
+            pins.append((raw,pin))
+        yield dict(c,pins=pins)
+
+
 def render(name, items):
     return (f'{name} {len(items)} ;\n' +
             ''.join(f'- {key} {value} ;\n' for key, value in items.items())+'END '+name)
@@ -35,6 +60,7 @@ def derive(original, components, cuts, half):
     text = original.read_text()
     pins, pspan = section(text, 'PINS')
     nets, nspan = section(text, 'NETS')
+    components=list(resolve_instances(text,components))
     terminal = re.compile(r'\(\s*(\S+)\s+(\S+)\s*\)')
     pending = {}
     attrs = {}
@@ -200,24 +226,15 @@ def main():
     report['assignment_endpoints_checked']=len(assignments)*2
     report['passed']=all(report[s]['exit_code']==0 and report[s]['routed'] and report[s]['drc']==0 for s in ('top','bottom'))
     if args.geometry_tool:
-        graph=collections.defaultdict(lambda:collections.defaultdict(set))
-        for c in components:
-            graph[c['net_id']][c['name']]
-        for row in assignments:
-            adj=graph[int(row['net_id'])]
-            a,b=row['top_component'],row['bottom_component']
-            adj[a].add(b);adj[b].add(a)
-        connected=True
-        for adj in graph.values():
-            seen=set()
-            todo=[next(iter(adj))]
-            while todo:
-                vertex=todo.pop()
-                if vertex not in seen:
-                    seen.add(vertex)
-                    todo.extend(adj[vertex]-seen)
-            connected=connected and len(seen)==len(adj)
-        report['joint_connectivity']='passed' if connected and all(report[s].get('geometry')=='passed' for s in ('top','bottom')) else 'failed'
+        if all(report[s].get('geometry')=='passed' for s in ('top','bottom')):
+            try:
+                joint=verify_routes(gr,output)
+            except (ValueError,KeyError,OSError) as error:
+                joint=dict(status='failed',error=str(error))
+            (output/'joint_geometry.json').write_text(json.dumps(joint,indent=2)+'\n')
+            report['joint_connectivity']=joint['status']
+        else:
+            report['joint_connectivity']='failed'
         report['passed']=report['passed'] and report['joint_connectivity']=='passed'
     (output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))

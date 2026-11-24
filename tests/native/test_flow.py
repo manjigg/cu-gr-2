@@ -1,6 +1,8 @@
 """End-to-end feasibility, sensitivity and commit/guide regressions on physical DEF inputs."""
 from pathlib import Path
 import copy
+import gzip
+import hashlib
 import json
 import subprocess
 import sys
@@ -9,6 +11,8 @@ import tempfile
 root=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(root/'scripts'))
 from native_check import check
+from native_detail import resolve_instances
+from native_joint import verify_routes
 
 binary=Path(sys.argv[1]).resolve()
 base=root/'tests/native/clusters'
@@ -35,7 +39,73 @@ def run(cfg,dest,success=True):
     return stats
 
 
+def check_joint_replay(job):
+    # 可控的导体分量回放用例，分别注入断线、错误 landing 与陈旧几何证据。
+    data=job/'out'
+    detail=job/'test-conductors'
+    records=[json.loads(row) for row in (data/'components.jsonl').read_text().splitlines()]
+    for die,side in enumerate(('top','bottom')):
+        folder=detail/side
+        folder.mkdir(parents=True)
+        evidence=b'geometry fixture'
+        (folder/'routed.def').write_bytes(evidence)
+        (folder/'geometry_audit.json').write_text(json.dumps(dict(status='passed',
+            routed_def_sha256=hashlib.sha256(evidence).hexdigest())))
+        ports=[]
+        with gzip.open(folder/'terminal_components.jsonl.gz','wt') as stream:
+            for i,c in enumerate(records):
+                if c['die']!=die:
+                    continue
+                terminals=list(c['pins'])
+                for h in c['landings']:
+                    ports.append(dict(component=c['name'],port=h['name'],net=c['net_id'],site=h['id'],
+                                      layer=h['layer'],x=h['xy'][0],y=h['xy'][1]))
+                    terminals.append(['PIN',h['name']])
+                for inst,pin in terminals:
+                    stream.write(json.dumps([c['name'],inst,pin,i])+'\n')
+        (folder/'physical_ports.json').write_text(json.dumps(ports))
+    assert verify_routes(data,detail)['hbt_pairs']==2
+    blob=detail/'top/terminal_components.jsonl.gz'
+    valid=blob.read_bytes()
+    with gzip.open(blob,'rt') as stream:
+        terminals=[json.loads(s) for s in stream]
+    terminals[0][3]+=100
+    with gzip.open(blob,'wt') as stream:
+        for t in terminals:
+            stream.write(json.dumps(t)+'\n')
+    try:
+        verify_routes(data,detail)
+        raise AssertionError('Separated physical terminals accepted')
+    except ValueError as error:
+        assert 'Open conductor' in str(error)
+    blob.write_bytes(valid)
+    port_file=detail/'top/physical_ports.json'
+    pads=json.loads(port_file.read_text())
+    pads[0]['x']+=1
+    port_file.write_text(json.dumps(pads))
+    try:
+        verify_routes(data,detail)
+        raise AssertionError('Displaced HBT accepted')
+    except ValueError as error:
+        assert 'landing mismatch' in str(error)
+    (detail/'top/routed.def').write_bytes(b'changed geometry')
+    try:
+        verify_routes(data,detail)
+        raise AssertionError('Stale routed DEF accepted')
+    except ValueError as error:
+        assert 'stale' in str(error)
+
+
 def regress(out):
+    records=[dict(pins=[(r'cell\X','Q')])]
+    text='COMPONENTS 1 ;\n- '+r'cell\\X'+' TEST ;\nEND COMPONENTS\n'
+    assert list(resolve_instances(text,records))[0]['pins']==[(r'cell\\X','Q')]
+    ambiguous=text.replace('COMPONENTS 1','COMPONENTS 2').replace('END COMPONENTS','- '+r'cell\X'+' TEST ;\nEND COMPONENTS')
+    try:
+        list(resolve_instances(ambiguous,records))
+        raise AssertionError('Ambiguous DEF aliases accepted')
+    except ValueError:
+        pass
     table=[]
     for label,w,v,h in [('wire',1,0,0),('via',0,1,0),('hbt',0,0,1),
                         ('weighted1',1,1,1),('weighted4',1,1,4),('weighted5',1,1,5),('weighted12',1,1,12)]:
@@ -45,6 +115,23 @@ def regress(out):
         m=rep['metrics']
         table.append((label,w,v,h,m['wirelength_um'],m['via_count'],m['used_hbt'],rep['stages'][-1]['best_feasible']))
     assert table[3][6]==2 and table[-1][6]==1 and table[3][4]<table[-1][4]
+    job=out/'weighted1'
+    check_joint_replay(job)
+    edges=job/'out/route_edges.tsv'
+    ledger=job/'ledger.json'
+    replay=[binary.parent/'native_replay',job/'manifest.json']
+    subprocess.run([*replay,edges,ledger],stdout=subprocess.DEVNULL,check=True)
+    evidence=json.loads(ledger.read_text())
+    assert evidence['resource_keys_after_commit']>0 and evidence['resource_keys_after_release']==0
+    assert evidence['hbt_count']==2 and evidence['physical_pins']==4 and evidence['unconnected_nets']==0
+    rows=edges.read_text().splitlines()
+    crossing=next(i for i,row in enumerate(rows) if '\tHBT\t' in row)
+    for name,invalid in [('duplicate',rows+[rows[crossing]]),('disconnected',rows[:crossing]+rows[crossing+1:])]:
+        bad=job/(name+'.tsv')
+        bad.write_text('\n'.join(invalid)+'\n')
+        report=job/(name+'.json')
+        p=subprocess.run([*replay,bad,report],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+        assert p.returncode!=0 and not report.exists(),name
     cfg=copy.deepcopy(template)
     cfg['bonding']['sites'][0]['fixed_net']=0
     run(cfg,out/'fixed')
@@ -65,6 +152,14 @@ def regress(out):
     detour=run(cfg,out/'detour')
     assert detour['stages'][0]['solver_status']=='INFEASIBLE',detour
     assert detour['stages'][1]['solver_status']=='OPTIMAL' and detour['metrics']['used_hbt']==2,detour
+    short=out/'short-obstruction.def'
+    short.write_text(blocked.read_text().replace('( 4500 12600 )','( 4500 4050 )'))
+    repair_cfg=copy.deepcopy(cfg)
+    repair_cfg['dies'][0]['def']=str(short.resolve())
+    repair_manifest=out/'repair.json'
+    repair_manifest.write_text(json.dumps(repair_cfg))
+    subprocess.run([binary.parent/'native_pattern_test',repair_manifest,'--branch-test'],
+                   stdout=subprocess.DEVNULL,check=True)
     cfg['stages']=[3]
     maze=run(cfg,out/'maze-only')
     assert maze['metrics']['used_hbt']==2 and maze['stages'][0]['stage']==3
