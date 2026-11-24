@@ -1,5 +1,6 @@
 #include "F2fRouter.h"
 #include "F2fCandidateSearch.h"
+#include "F2fPareto.h"
 #include "GlobalRouter.h"
 #include "MazeRoute.h"
 #include "PatternRoute.h"
@@ -139,13 +140,14 @@ struct Job {
     RoutedNet route;
     int fixedSite = -1;
     Box searchRegion;
+    std::vector<F2fParetoRecord> paretoArchive;
 
     bool crosses() const { return sides[Top] && sides[Bottom]; }
 };
 
 struct CandidatePolicy {
     bool budgetDp, beam, compareOld, uniqueSteps;
-    int maxHbt, maxNodes, beamWidth, maxSites;
+    int maxNodes, beamWidth, maxSites;
 
     explicit CandidatePolicy(const Json& config) {
         const auto mode = config.value("candidate_mode", std::string("improved"));
@@ -156,11 +158,13 @@ struct CandidatePolicy {
         beam = improved && opts.value("position_beam", true);
         compareOld = improved && opts.value("compare_old", true);
         uniqueSteps = improved && opts.value("deduplicate_steps", true);
-        maxHbt = opts.value("max_hbt", 8);
+
+        // max_hbt is intentionally no longer used. The DP derives its HBT
+        // count range from the projected tree's possible crossing events.
         maxNodes = opts.value("max_projection_nodes", 160);
         beamWidth = opts.value("beam_width", 3);
         maxSites = opts.value("max_sites", 32);
-        if (maxHbt < 1 || maxHbt > 16 || maxNodes < 2 || maxNodes > 512 ||
+        if (maxNodes < 2 || maxNodes > 512 ||
             beamWidth < 1 || beamWidth > 16 || maxSites < 2 || maxSites > 128) {
             throw std::runtime_error("Invalid F2F candidate search bounds");
         }
@@ -664,7 +668,7 @@ vector<Topology> budgetTopologies(const vector<ProjectedNode>& tree, const Job& 
         }
     }
     vector<Topology> topologies;
-    for (auto& state : searchF2fDieAssignments(input, graph.policy.maxHbt)) {
+    for (auto& state : searchF2fDieAssignments(input)) {
         auto topology = labeledTopology(tree, state.labels);
         if (topology.crossings.size() != state.hbtCount) {
             throw std::logic_error("F2F budget DP traceback disagrees with HBT count");
@@ -764,6 +768,21 @@ void measureReroute(RoutedNet& route, const F2fGraph& graph) {
     }
 }
 
+F2fParetoMetrics measureF2fParetoMetrics(const RoutedNet& route, const F2fGraph& graph) {
+    F2fParetoMetrics result;
+    result.hbtCount = static_cast<int>(route.sites.size());
+    for (int d = Top; d <= Bottom; ++d) {
+        const auto metrics = graph.dies[d].graph().measureForest(
+            route.components[d], true, graph.policy.uniqueSteps);
+        result.wireLengthUm += metrics.wirelengthUm;
+        result.viaCount += metrics.vias;
+        result.wireOverflowDelta += metrics.wireOverflowDelta;
+        result.resourceOverflowDelta += metrics.resourceOverflowDelta;
+        result.congestionCost += metrics.congestionCost;
+    }
+    return result;
+}
+
 bool improves(const RoutedNet& candidate, const RoutedNet& previous, double eps) {
     if (!std::isfinite(candidate.cost)) return false;
     if (!std::isfinite(previous.cost)) return true;
@@ -849,9 +868,28 @@ vector<SiteCombination> beamSites(F2fGraph& graph, const Topology& topology, con
     return beam;
 }
 
-RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& params, Stage stage,
+RoutedNet planJob(F2fGraph& graph, Job& job, int id, const Parameters& params, Stage stage,
                   const std::array<GridGraphView<bool>, 2>& congestion) {
     RoutedNet best;
+    job.paretoArchive.clear();
+
+    // Preserve the incumbent when a later stage reroutes an existing net.
+    if (stage != Stage::Pattern && std::isfinite(job.route.cost)) {
+        bool connected = true;
+        for (int d = Top; d <= Bottom; ++d) {
+            for (const auto& component : job.route.components[d]) {
+                connected = connected && graph.dies[d].graph().connectsPins(component);
+            }
+        }
+        if (connected) {
+            F2fParetoRecord incumbent;
+            incumbent.metrics = measureF2fParetoMetrics(job.route, graph);
+            incumbent.sites = job.route.sites;
+            incumbent.stage = phase(stage);
+            insertF2fParetoCandidate(job.paretoArchive, std::move(incumbent));
+        }
+    }
+
     int single = 0, multi = 0, unavailable = 0, incomplete = 0, expansions = 0, collisions = 0, retained = 0;
     const bool compareOverflow = graph.policy.compareOld && stage != Stage::Pattern;
     const bool check = graph.policy.budgetDp || graph.policy.beam || graph.policy.compareOld || graph.policy.uniqueSteps;
@@ -861,16 +899,28 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
             plan = evaluateTopology(topology, sites, job, graph, params, stage, congestion);
         }
         if (compareOverflow && std::isfinite(plan.cost)) measureReroute(plan, graph);
-        const bool wouldImprove = improves(plan, best, 0.0);
-        if (wouldImprove && check) {
+
+        // Every candidate entering the Pareto archive must be connected.
+        if (std::isfinite(plan.cost) && check) {
             for (int d = Top; d <= Bottom; ++d) {
                 for (const auto& component : plan.components[d]) {
                     if (!graph.dies[d].graph().connectsPins(component)) {
                         plan.cost = std::numeric_limits<CostT>::infinity();
+                        break;
                     }
                 }
+                if (!std::isfinite(plan.cost)) break;
             }
         }
+
+        if (std::isfinite(plan.cost) && check) {
+            F2fParetoRecord candidate;
+            candidate.metrics = measureF2fParetoMetrics(plan, graph);
+            candidate.sites = sites;
+            candidate.stage = phase(stage);
+            insertF2fParetoCandidate(job.paretoArchive, std::move(candidate));
+        }
+
         single += sites.size() == 1;
         multi += sites.size() > 1;
         if (graph.diagnostics.enabled()) {
@@ -891,7 +941,18 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
                 {"single_evaluated", single}, {"multi_evaluated", multi}, {"empty_site_lists", unavailable},
                 {"incomplete_combinations", incomplete}, {"expansions", expansions},
                 {"retained_dp_topologies", retained}, {"beam_collision_rejections", collisions},
-                {"feasible", std::isfinite(best.cost)}});
+                {"feasible", std::isfinite(best.cost)},
+                {"pareto_candidates", job.paretoArchive.size()}});
+            for (std::size_t rank = 0; rank < job.paretoArchive.size(); ++rank) {
+                const auto& candidate = job.paretoArchive[rank];
+                const auto& m = candidate.metrics;
+                graph.diagnostics.write({{"type", "pareto_candidate"}, {"net", id},
+                    {"stage", candidate.stage}, {"rank", rank}, {"sites", candidate.sites},
+                    {"metrics", {{"wirelength_um", m.wireLengthUm}, {"hbt_count", m.hbtCount},
+                        {"via_count", m.viaCount}, {"wire_overflow_delta", m.wireOverflowDelta},
+                        {"resource_overflow_delta", m.resourceOverflowDelta},
+                        {"congestion_cost", m.congestionCost}}}});
+            }
         }
         return std::move(best);
     };
@@ -981,7 +1042,6 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
     }
     for (const auto& topology : topologies) {
         if (topology.crossings.empty() || (!graph.policy.budgetDp && topology.crossings.size() < 2) ||
-            (graph.policy.budgetDp && topology.crossings.size() > graph.policy.maxHbt) ||
             (!compareOverflow && graph.hbtCost * topology.crossings.size() >= best.cost)) continue;
         if (graph.policy.beam) {
             searchPositions(topology);
@@ -1123,14 +1183,25 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
     }
 }
 
-void writeOutputs(F2fGraph& graph, const vector<Job>& jobs, const std::string& hbtFile) {
+void writeOutputs(F2fGraph& graph, const vector<Job>& jobs, const std::string& hbtFile,
+                  const std::string& paretoFile) {
     if (graph.dies[Top].guideFile == graph.dies[Bottom].guideFile ||
-        graph.dies[Top].guideFile == hbtFile || graph.dies[Bottom].guideFile == hbtFile) {
+        graph.dies[Top].guideFile == hbtFile || graph.dies[Bottom].guideFile == hbtFile ||
+        (!paretoFile.empty() && (paretoFile == graph.dies[Top].guideFile ||
+                                 paretoFile == graph.dies[Bottom].guideFile ||
+                                 paretoFile == hbtFile))) {
         throw std::runtime_error("F2F outputs must have distinct paths");
     }
     std::array<std::ofstream, 2> guides{{std::ofstream(graph.dies[Top].guideFile),
                                         std::ofstream(graph.dies[Bottom].guideFile)}};
     std::ofstream bonds(hbtFile);
+    std::ofstream pareto;
+    if (!paretoFile.empty()) {
+        pareto.open(paretoFile);
+        if (!pareto) throw std::runtime_error("Cannot open F2F Pareto output: " + paretoFile);
+        pareto << "net_id\ttop_net\tbottom_net\tstage\trank\thbt_count\twirelength_um\tvia_count"
+                  "\twire_overflow_delta\tresource_overflow_delta\tcongestion_cost\tsite_ids\n";
+    }
     if (!guides[Top] || !guides[Bottom] || !bonds) throw std::runtime_error("Cannot open F2F outputs");
     bonds << "net_id\ttop_net\tbottom_net\tsite_id\tpackage_x\tpackage_y\tpackage_dbu";
     for (const auto* side : {"top", "bottom"}) {
@@ -1167,10 +1238,31 @@ void writeOutputs(F2fGraph& graph, const vector<Job>& jobs, const std::string& h
             }
             bonds << '\t' << hbt.fixed << '\n';
         }
+        if (pareto) {
+            const auto topName = job.sides[Top] ? job.sides[Top]->getName() : std::string();
+            const auto bottomName = job.sides[Bottom] ? job.sides[Bottom]->getName() : std::string();
+            for (std::size_t rank = 0; rank < job.paretoArchive.size(); ++rank) {
+                const auto& candidate = job.paretoArchive[rank];
+                const auto& m = candidate.metrics;
+                pareto << i << '\t' << topName << '\t' << bottomName << '\t'
+                       << candidate.stage << '\t' << rank << '\t' << m.hbtCount << '\t'
+                       << m.wireLengthUm << '\t' << m.viaCount << '\t'
+                       << m.wireOverflowDelta << '\t' << m.resourceOverflowDelta << '\t'
+                       << m.congestionCost << '\t';
+                for (std::size_t site = 0; site < candidate.sites.size(); ++site) {
+                    if (site) pareto << ',';
+                    pareto << candidate.sites[site];
+                }
+                pareto << '\n';
+            }
+        }
     }
     for (auto& guide : guides) guide.close();
     bonds.close();
-    if (!guides[Top] || !guides[Bottom] || !bonds) throw std::runtime_error("Cannot write F2F outputs");
+    if (pareto) pareto.close();
+    if (!guides[Top] || !guides[Bottom] || !bonds || (!paretoFile.empty() && !pareto)) {
+        throw std::runtime_error("Cannot write F2F outputs");
+    }
     log() << "Assigned HBTs: " << assigned << ", overflowing die-local routes: " << overflows << '\n';
 }
 
@@ -1181,13 +1273,33 @@ void runF2f(const Parameters& parameters) {
     if (!file) throw std::runtime_error("Cannot open F2F configuration: " + parameters.f2f_config);
     Json config;
     file >> config;
+    const auto paretoFile = config.value("pareto_output", std::string());
+    if (!paretoFile.empty()) {
+        const auto output = boost::filesystem::absolute(paretoFile).lexically_normal();
+        std::vector<std::string> protectedPaths = {
+            config.at("top").at("lef").get<std::string>(),
+            config.at("top").at("def").get<std::string>(),
+            config.at("top").at("guide").get<std::string>(),
+            config.at("bottom").at("lef").get<std::string>(),
+            config.at("bottom").at("def").get<std::string>(),
+            config.at("bottom").at("guide").get<std::string>(),
+            config.at("hbt_output").get<std::string>()
+        };
+        const auto diagnosticsPath = config.value("diagnostics", std::string());
+        if (!diagnosticsPath.empty()) protectedPaths.push_back(diagnosticsPath);
+        for (const auto& protectedPath : protectedPaths) {
+            if (output == boost::filesystem::absolute(protectedPath).lexically_normal()) {
+                throw std::runtime_error("F2F Pareto output must not overwrite an input or another output");
+            }
+        }
+    }
     F2fGraph graph(parameters, config);
     auto jobs = buildJobs(graph, config);
     log() << "F2F nets: " << jobs.size() << ", legal HBT sites: " << graph.sites.size() << '\n';
     const auto start = std::chrono::steady_clock::now();
     routeJobs(graph, jobs, parameters);
     const double routeSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    writeOutputs(graph, jobs, config.at("hbt_output").get<std::string>());
+    writeOutputs(graph, jobs, config.at("hbt_output").get<std::string>(), paretoFile);
     double wireMetric = 0, wirelengthUm = 0, overflow = 0;
     int64_t vias = 0, bonds = 0;
     for (auto& die : graph.dies) {

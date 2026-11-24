@@ -2,11 +2,10 @@
 #include <array>
 #include <vector>
 
-// 投影树上的估价使用与局部 Wire/Via/拥塞相同的成本尺度。
 struct F2fLabelNode {
     struct Child {
         int index;
-        std::array<std::array<double, 2>, 2> cost;  // 父 Die → 子 Die
+        std::array<std::array<double, 2>, 2> cost;
     };
     std::vector<Child> children;
     std::array<int, 2> localHbt;
@@ -19,6 +18,11 @@ struct F2fDieAssignment {
     double estimatedCost;
 };
 
-// 节点顺序是父节点在前的树遍历序。每个 HBT 数量保留至多两条回溯链。
-std::vector<F2fDieAssignment> searchF2fDieAssignments(const std::vector<F2fLabelNode>& tree,
-                                                       int maxHbt);
+// One possible crossing per tree edge plus the maximum local mismatch
+// contribution at each projected node.
+int f2fDieAssignmentHbtUpperBound(const std::vector<F2fLabelNode>& tree);
+
+// Search every structurally possible HBT-count state. There is deliberately
+// no user-specified max_hbt argument.
+std::vector<F2fDieAssignment> searchF2fDieAssignments(
+    const std::vector<F2fLabelNode>& tree);

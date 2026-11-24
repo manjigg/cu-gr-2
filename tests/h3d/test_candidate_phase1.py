@@ -122,7 +122,7 @@ def main():
         stress = [[(30000, 150000), (270000, 150000)]] * 100
         _, events = run(binary, work("congestion"), stress, stress,
                         hbt={"origin": [2100, 2100], "pitch": [4200, 4200], "cost": 1},
-                        search={"max_sites": 2, "max_hbt": 1})
+                        search={"max_sites": 2})
         check_rollback(events)
     print("F2F candidate legality, exhaustion, mirror, different grids and rollback passed")
 
