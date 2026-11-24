@@ -14,6 +14,7 @@ public:
     void writeNetGuides(std::ostream& out, const std::string& name,
                         const vector<GRNet>& components, const vector<GRPoint>& landings);
     GridGraph& getGridGraph() { return gridGraph; }
+    const GridGraph& getGridGraph() const { return gridGraph; }
     
 private:
     const Parameters& parameters;

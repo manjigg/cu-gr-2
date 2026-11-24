@@ -278,7 +278,7 @@ CostT GridGraph::getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const {
 }
 
 vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& components,
-                                                         ForestMetrics* metrics) const {
+                                                         ForestMetrics* metrics, bool deduplicateSingle) const {
     robin_hood::unordered_set<uint64_t> seen;
     vector<RouteStep> steps;
     auto add = [&](const GRPoint& lower, bool via) {
@@ -292,7 +292,7 @@ vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& 
                 metrics->duplicateWirelengthUm += double(getEdgeLength(axis, lower[axis])) / libDBU;
             }
             // 诊断基线仍复现单树原有逐边提交口径。
-            if (components.size() == 1) steps.push_back({lower, via});
+            if (!deduplicateSingle && components.size() == 1) steps.push_back({lower, via});
         }
     };
     for (const auto& component : components) {
@@ -317,7 +317,8 @@ vector<GridGraph::RouteStep> GridGraph::collectForestSteps(const vector<GRNet>& 
     return steps;
 }
 
-ForestMetrics GridGraph::measureForest(const vector<GRNet>& components, bool includeOverflow) const {
+ForestMetrics GridGraph::measureForest(const vector<GRNet>& components, bool includeOverflow,
+                                      bool deduplicateSingle) const {
     ForestMetrics result;
     struct Demand {
         GRPoint point;
@@ -340,7 +341,7 @@ ForestMetrics GridGraph::measureForest(const vector<GRNet>& components, bool inc
             if (isWire) entry.wire += demand;
         }
     };
-    for (const auto& step : collectForestSteps(components, &result)) {
+    for (const auto& step : collectForestSteps(components, &result, deduplicateSingle)) {
         const auto& p = step.point;
         if (step.via) {
             ++result.vias;
@@ -364,8 +365,8 @@ ForestMetrics GridGraph::measureForest(const vector<GRNet>& components, bool inc
     return result;
 }
 
-CostT GridGraph::getForestCost(const vector<GRNet>& components) const {
-    if (components.size() == 1) return getTreeCost(components.front().getRoutingTree());
+CostT GridGraph::getForestCost(const vector<GRNet>& components, bool deduplicateSingle) const {
+    if (components.size() == 1 && !deduplicateSingle) return getTreeCost(components.front().getRoutingTree());
     CostT cost = 0;
     for (const auto& step : collectForestSteps(components)) {
         const auto& point = step.point;
@@ -374,8 +375,8 @@ CostT GridGraph::getForestCost(const vector<GRNet>& components) const {
     return cost;
 }
 
-void GridGraph::commitForest(const vector<GRNet>& components, bool reverse) {
-    if (components.size() == 1) {
+void GridGraph::commitForest(const vector<GRNet>& components, bool reverse, bool deduplicateSingle) {
+    if (components.size() == 1 && !deduplicateSingle) {
         commitTree(components.front().getRoutingTree(), reverse);
         return;
     }
@@ -384,6 +385,50 @@ void GridGraph::commitForest(const vector<GRNet>& components, bool reverse) {
         if (step.via) commitVia(point.layerIdx, point, reverse);
         else commitWire(point.layerIdx, point, reverse);
     }
+}
+
+bool GridGraph::connectsPins(const GRNet& net) const {
+    const auto& root = net.getRoutingTree();
+    if (!root) return false;
+    robin_hood::unordered_set<uint64_t> vertices;
+    bool legal = true;
+    auto inBounds = [&](const GRPoint& p) {
+        return p.layerIdx >= 0 && p.layerIdx < nLayers && p.x >= 0 && p.x < xSize && p.y >= 0 && p.y < ySize;
+    };
+    GRTreeNode::preorder(root, [&](const std::shared_ptr<GRTreeNode>& node) {
+        if (!legal || !inBounds(*node)) {
+            legal = false;
+            return;
+        }
+        vertices.insert(hashCell(*node));
+        for (const auto& child : node->children) {
+            if (!inBounds(*child)) { legal = false; return; }
+            GRPoint point = *node;
+            if (node->layerIdx != child->layerIdx) {
+                if (node->x != child->x || node->y != child->y) { legal = false; return; }
+                for (int l = std::min(node->layerIdx, child->layerIdx);
+                     l < std::max(node->layerIdx, child->layerIdx); ++l) {
+                    if (!canUseVia(l)) { legal = false; return; }
+                    point.layerIdx = l + 1;
+                    vertices.insert(hashCell(point));
+                }
+            } else {
+                const auto axis = getLayerDirection(node->layerIdx);
+                if ((*node)[1 - axis] != (*child)[1 - axis]) { legal = false; return; }
+                for (point[axis] = std::min((*node)[axis], (*child)[axis]);
+                     point[axis] <= std::max((*node)[axis], (*child)[axis]); ++point[axis]) {
+                    vertices.insert(hashCell(point));
+                }
+            }
+        }
+    });
+    if (!legal) return false;
+    for (const auto& pin : net.getPinAccessPoints()) {
+        if (std::none_of(pin.begin(), pin.end(), [&](const GRPoint& p) {
+                return inBounds(p) && vertices.count(hashCell(p));
+            })) return false;
+    }
+    return true;
 }
 
 void GridGraph::selectAccessPoints(GRNet& net, robin_hood::unordered_map<uint64_t, std::pair<utils::PointT<int>, utils::IntervalT<int>>>& selectedAccessPoints) const {

@@ -51,8 +51,10 @@ public:
     CostT getViaCost(const int layerIndex, const utils::PointT<int> loc) const;
     bool canUseVia(int lowerLayer) const { return legalVias[lowerLayer]; }
     CostT getTreeCost(const std::shared_ptr<GRTreeNode>& tree) const;
-    CostT getForestCost(const vector<GRNet>& components) const;
-    ForestMetrics measureForest(const vector<GRNet>& components, bool includeOverflow = true) const;
+    CostT getForestCost(const vector<GRNet>& components, bool deduplicateSingle = false) const;
+    ForestMetrics measureForest(const vector<GRNet>& components, bool includeOverflow = true,
+                                bool deduplicateSingle = false) const;
+    bool connectsPins(const GRNet& net) const;
     inline CostT getUnitViaCost() const { return unit_via_cost; }
     
     // Misc
@@ -60,7 +62,7 @@ public:
     
     // Methods for updating demands 
     void commitTree(const std::shared_ptr<GRTreeNode>& tree, const bool reverse = false);
-    void commitForest(const vector<GRNet>& components, bool reverse);
+    void commitForest(const vector<GRNet>& components, bool reverse, bool deduplicateSingle = false);
     
     // Checks
     inline bool checkOverflow(const int layerIndex, const int x, const int y) const { return getEdge(layerIndex, x, y).getResource() < 0.0; }
@@ -129,7 +131,8 @@ private:
         bool via;
     };
     vector<RouteStep> collectForestSteps(const vector<GRNet>& components,
-                                         ForestMetrics* metrics = nullptr) const;
+                                         ForestMetrics* metrics = nullptr,
+                                         bool deduplicateSingle = false) const;
 };
 
 template <typename Type>

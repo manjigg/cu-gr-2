@@ -1,4 +1,5 @@
 #include "F2fRouter.h"
+#include "F2fCandidateSearch.h"
 #include "GlobalRouter.h"
 #include "MazeRoute.h"
 #include "PatternRoute.h"
@@ -6,6 +7,7 @@
 #include <boost/filesystem.hpp>
 #include <chrono>
 #include <map>
+#include <numeric>
 
 namespace {
 
@@ -85,6 +87,12 @@ struct DieGrid {
     }
 
     GridGraph& graph() { return router.getGridGraph(); }
+    const GridGraph& graph() const { return router.getGridGraph(); }
+
+    XY packagePoint(const GRPoint& pin) const {
+        const auto box = packageBox(graph().getCellBox(pin));
+        return {box.cx(), box.cy()};
+    }
 
     XY localPackageUnits(const XY& position) const {
         return {sign.x * (position.x - offset.x), sign.y * (position.y - offset.y)};
@@ -99,14 +107,14 @@ struct DieGrid {
         return result;
     }
 
-    GRPoint landing(const XY& position) {
+    GRPoint landing(const XY& position) const {
         const auto local = localPackageUnits(position);
         int cells[2];
         for (int axis = 0; axis < 2; ++axis) {
             const auto& lines = design.getGridlines()[axis];
             auto it = std::upper_bound(lines.begin(), lines.end(), local[axis],
                 [this](DBU value, DBU line) { return value < line * scale; });
-            cells[axis] = std::min<int>(it - lines.begin() - 1, lines.size() - 2);
+            cells[axis] = std::max(0, std::min<int>(it - lines.begin() - 1, lines.size() - 2));
         }
         return {interfaceLayer, cells[0], cells[1]};
     }
@@ -123,6 +131,7 @@ struct RoutedNet {
     std::array<vector<GRNet>, 2> components;
     vector<int> sites;
     CostT cost = std::numeric_limits<CostT>::infinity();
+    double wireOverflow = 0, resourceOverflow = 0;
 };
 
 struct Job {
@@ -134,6 +143,30 @@ struct Job {
     bool crosses() const { return sides[Top] && sides[Bottom]; }
 };
 
+struct CandidatePolicy {
+    bool budgetDp, beam, compareOld, uniqueSteps;
+    int maxHbt, maxNodes, beamWidth, maxSites;
+
+    explicit CandidatePolicy(const Json& config) {
+        const auto mode = config.value("candidate_mode", std::string("improved"));
+        if (mode != "legacy" && mode != "improved") throw std::runtime_error("Invalid candidate_mode");
+        const bool improved = mode == "improved";
+        const auto opts = config.value("candidate_search", Json::object());
+        budgetDp = improved && opts.value("budget_dp", true);
+        beam = improved && opts.value("position_beam", true);
+        compareOld = improved && opts.value("compare_old", true);
+        uniqueSteps = improved && opts.value("deduplicate_steps", true);
+        maxHbt = opts.value("max_hbt", 8);
+        maxNodes = opts.value("max_projection_nodes", 160);
+        beamWidth = opts.value("beam_width", 3);
+        maxSites = opts.value("max_sites", 32);
+        if (maxHbt < 1 || maxHbt > 16 || maxNodes < 2 || maxNodes > 512 ||
+            beamWidth < 1 || beamWidth > 16 || maxSites < 2 || maxSites > 128) {
+            throw std::runtime_error("Invalid F2F candidate search bounds");
+        }
+    }
+};
+
 class F2fGraph {
 public:
     std::array<DieGrid, 2> dies;
@@ -142,12 +175,13 @@ public:
     DBU packageDbu;
     RTree siteIndex;
     Diagnostics diagnostics;
+    CandidatePolicy policy;
 
     F2fGraph(const Parameters& params, const Json& config)
         : dies{{DieGrid(params, config.at("top"), config.at("package_dbu").get<DBU>()),
                 DieGrid(params, config.at("bottom"), config.at("package_dbu").get<DBU>())}},
           hbtCost(config.at("hbt").value("cost", 4.0)),
-          packageDbu(config.at("package_dbu").get<DBU>()), diagnostics(config) {
+          packageDbu(config.at("package_dbu").get<DBU>()), diagnostics(config), policy(config) {
         const auto& hbt = config.at("hbt");
         const XY origin = point(hbt.at("origin"));
         const XY pitch = point(hbt.at("pitch"));
@@ -236,7 +270,7 @@ public:
             }
         }
         for (int die = Top; die <= Bottom; ++die) {
-            dies[die].graph().commitForest(route.components[die], reverse);
+            dies[die].graph().commitForest(route.components[die], reverse, policy.uniqueSteps);
         }
         for (int index : route.sites) {
             if (!sites[index].fixed) sites[index].owner = reverse ? -1 : id;
@@ -354,7 +388,8 @@ Json routeDiagnostics(const RoutedNet& route, F2fGraph& graph, bool includeOverf
     Json sides = Json::array();
     double total = graph.hbtCost * route.sites.size();
     for (int d = Top; d <= Bottom; ++d) {
-        const auto stat = graph.dies[d].graph().measureForest(route.components[d], includeOverflow);
+        const auto stat = graph.dies[d].graph().measureForest(
+            route.components[d], includeOverflow, graph.policy.uniqueSteps);
         total += stat.wireCost + stat.viaCost + stat.congestionCost;
         sides.push_back({{"wire_um", stat.wirelengthUm}, {"vias", stat.vias},
                          {"wire_cost", stat.wireCost}, {"via_cost", stat.viaCost},
@@ -476,6 +511,44 @@ vector<ProjectedNode> projectSteiner(const Job& job, F2fGraph& graph) {
     return nodes;
 }
 
+Topology labeledTopology(const vector<ProjectedNode>& nodes, const vector<int>& labels) {
+    Topology topology;
+    auto component = [&](int d) {
+        int id = topology.components.size();
+        topology.components.push_back({d, {}});
+        return id;
+    };
+    auto cross = [&](int current, int other, const Box& region) {
+        if (topology.components[current].die == Bottom) std::swap(current, other);
+        topology.crossings.push_back({{{current, other}}, region});
+    };
+    auto visit = [&](auto&& self, int i, int d, int current) -> void {
+        const auto& n = nodes[i];
+        int opposite = -1;
+        if (std::any_of(n.terminals.begin(), n.terminals.end(),
+                        [&](const Terminal& terminal) { return terminal.die != d; })) {
+            opposite = component(1 - d);
+            cross(current, opposite, Box(n.point.x, n.point.y, n.point.x, n.point.y));
+        }
+        for (const auto& terminal : n.terminals) {
+            topology.components[terminal.die == d ? current : opposite].pins.push_back(terminal.pin);
+        }
+        for (int child : n.children) {
+            if (labels[child] == d) {
+                self(self, child, d, current);
+            } else {
+                const auto p = nodes[child].point;
+                const int next = component(1 - d);
+                cross(current, next, Box(std::min(p.x, n.point.x), std::min(p.y, n.point.y),
+                                         std::max(p.x, n.point.x), std::max(p.y, n.point.y)));
+                self(self, child, 1 - d, next);
+            }
+        }
+    };
+    visit(visit, 0, labels[0], component(labels[0]));
+    return topology;
+}
+
 // Label Steiner vertices by die, then cut at die changes. The local mismatch
 // term allows one HBT to serve all opposite-side pins at the same vertex.
 Topology labelTopology(const vector<ProjectedNode>& nodes, bool pinAffinity) {
@@ -490,41 +563,154 @@ Topology labelTopology(const vector<ProjectedNode>& nodes, bool pinAffinity) {
             }
         }
     }
-    Topology topology;
-    auto component = [&](int d) {
-        int id = topology.components.size();
-        topology.components.push_back({d, {}});
-        return id;
-    };
-    auto cross = [&](int current, int other, const Box& region) {
-        if (topology.components[current].die == Bottom) std::swap(current, other);
-        topology.crossings.push_back({{{current, other}}, region});
-    };
-    auto visit = [&](auto&& self, int i, int d, int current) -> void {
-        const auto& n = nodes[i];
-        int opposite = -1;
-        if (hasPins[i][1 - d]) {
-            opposite = component(1 - d);
-            cross(current, opposite, Box(n.point.x, n.point.y, n.point.x, n.point.y));
+    vector<int> labels(nodes.size());
+    labels[0] = costs[0][Top] <= costs[0][Bottom] ? Top : Bottom;
+    for (int v = 0; v < nodes.size(); ++v) {
+        const int d = labels[v];
+        for (int child : nodes[v].children) {
+            labels[child] = costs[child][d] <= 1 + costs[child][1 - d] ? d : 1 - d;
         }
-        for (const auto& terminal : n.terminals) {
-            topology.components[terminal.die == d ? current : opposite].pins.push_back(terminal.pin);
-        }
-        for (int child : n.children) {
-            if (costs[child][d] <= 1 + costs[child][1 - d]) {
-                self(self, child, d, current);
-            } else {
-                const auto p = nodes[child].point;
-                const int next = component(1 - d);
-                cross(current, next, Box(std::min(p.x, n.point.x), std::min(p.y, n.point.y),
-                                         std::max(p.x, n.point.x), std::max(p.y, n.point.y)));
-                self(self, child, 1 - d, next);
+    }
+    return labeledTopology(nodes, labels);
+}
+
+DBU distanceToRegion(const XY& p, const Box& b) {
+    return std::max({DBU(0), b.x.low - p.x, p.x - b.x.high}) +
+           std::max({DBU(0), b.y.low - p.y, p.y - b.y.high});
+}
+
+double estimatedWire(const DieGrid& die, const XY& a, const XY& b, const Parameters& params) {
+    const auto& grid = die.graph();
+    const auto midpoint = die.landing({a.x + (b.x - a.x) / 2, a.y + (b.y - a.y) / 2});
+    double estimate = 0;
+    for (int axis = 0; axis < 2; ++axis) {
+        const double span = std::abs(a[axis] - b[axis]) / double(die.scale);
+        if (span == 0) continue;
+        double perDbu = std::numeric_limits<double>::infinity();
+        if (grid.getSize(axis) > 1) {
+            auto lower = midpoint;
+            lower[axis] = std::min(lower[axis], static_cast<int>(grid.getSize(axis)) - 2);
+            auto upper = lower;
+            ++upper[axis];
+            for (int layer = params.min_routing_layer; layer < grid.getNumLayers(); ++layer) {
+                if (grid.getLayerDirection(layer) != axis) continue;
+                perDbu = std::min(perDbu, grid.getWireCost(layer, lower, upper) /
+                                            grid.getEdgeLength(axis, lower[axis]));
             }
         }
+        // 单点采样只用于排序，完整方案仍走实际 DAG/Maze。
+        if (!std::isfinite(perDbu)) perDbu = params.weight_wire_length / grid.getM2Pitch();
+        estimate += perDbu * span;
+    }
+    return estimate;
+}
+
+double estimatedAccess(const DieGrid& die, const GRPoint& landing, int target) {
+    const auto& grid = die.graph();
+    double cost = 0;
+    for (int l = std::min(landing.layerIdx, target); l < std::max(landing.layerIdx, target); ++l) {
+        if (!grid.canUseVia(l)) return std::numeric_limits<double>::infinity();
+        cost += grid.getViaCost(l, landing);
+    }
+    return cost;
+}
+
+double approach(const DieGrid& die, const GRPoint& landing, int axis, const Parameters& params) {
+    if (axis < 0) return 0;
+    const auto& grid = die.graph();
+    double best = std::numeric_limits<double>::infinity();
+    for (int l = params.min_routing_layer; l < grid.getNumLayers(); ++l) {
+        if (grid.getLayerDirection(l) == static_cast<unsigned>(axis)) {
+            best = std::min(best, estimatedAccess(die, landing, l));
+        }
+    }
+    return best;
+}
+
+vector<Topology> budgetTopologies(const vector<ProjectedNode>& tree, const Job& job,
+                                   const F2fGraph& graph, const Parameters& params) {
+    vector<F2fLabelNode> input(tree.size());
+    for (int i = 0; i < tree.size(); ++i) {
+        const auto& node = tree[i];
+        for (int d = Top; d <= Bottom; ++d) {
+            auto& label = input[i];
+            for (const auto& pin : node.terminals) {
+                if (pin.die == d) continue;
+                label.localHbt[d] = 1;
+                auto& otherDie = graph.dies[pin.die];
+                double access = std::numeric_limits<double>::infinity();
+                for (const auto& p : job.sides[pin.die]->getPinAccessPoints()[pin.pin]) {
+                    access = std::min(access, estimatedAccess(otherDie, otherDie.landing(node.point), p.layerIdx));
+                }
+                label.localCost[d] = std::max(label.localCost[d], graph.hbtCost + access);
+            }
+        }
+        for (int child : node.children) {
+            const auto& next = tree[child].point;
+            const XY midpoint(node.point.x + (next.x - node.point.x) / 2,
+                              node.point.y + (next.y - node.point.y) / 2);
+            const auto deltaX = std::abs(next.x - node.point.x), deltaY = std::abs(next.y - node.point.y);
+            const int axis = deltaX + deltaY == 0 ? -1 : deltaX >= deltaY ? 0 : 1;
+            F2fLabelNode::Child edge{child, {}};
+            for (int d = Top; d <= Bottom; ++d) {
+                const auto& a = graph.dies[d];
+                const auto& b = graph.dies[1 - d];
+                edge.cost[d][d] = estimatedWire(a, node.point, next, params);
+                edge.cost[d][1 - d] = graph.hbtCost + estimatedWire(a, node.point, midpoint, params) +
+                    estimatedWire(b, midpoint, next, params) + approach(a, a.landing(midpoint), axis, params) +
+                    approach(b, b.landing(midpoint), axis, params);
+            }
+            input[i].children.push_back(edge);
+        }
+    }
+    vector<Topology> topologies;
+    for (auto& state : searchF2fDieAssignments(input, graph.policy.maxHbt)) {
+        auto topology = labeledTopology(tree, state.labels);
+        if (topology.crossings.size() != state.hbtCount) {
+            throw std::logic_error("F2F budget DP traceback disagrees with HBT count");
+        }
+        topologies.push_back(std::move(topology));
+    }
+    return topologies;
+}
+
+bool validTopology(const Topology& topology, const Job& job, const vector<int>& sites,
+                   const F2fGraph& graph, int id) {
+    if (sites.size() != topology.crossings.size() || sites.size() + 1 != topology.components.size() ||
+        (job.fixedSite >= 0 && std::find(sites.begin(), sites.end(), job.fixedSite) == sites.end())) return false;
+    vector<int> roots(topology.components.size());
+    std::iota(roots.begin(), roots.end(), 0);
+    auto root = [&](int x) {
+        while (roots[x] != x) x = roots[x];
+        return x;
     };
-    const int rootDie = costs[0][Top] <= costs[0][Bottom] ? Top : Bottom;
-    visit(visit, 0, rootDie, component(rootDie));
-    return topology;
+    std::set<int> used;
+    for (int i = 0; i < sites.size(); ++i) {
+        const int site = sites[i];
+        if (site < 0 || site >= graph.sites.size() || !used.insert(site).second) return false;
+        const auto& hbt = graph.sites[site];
+        if (hbt.owner >= 0 && hbt.owner != id) return false;
+        const auto& components = topology.crossings[i].components;
+        for (int d = Top; d <= Bottom; ++d) {
+            if (components[d] < 0 || components[d] >= roots.size() ||
+                topology.components[components[d]].die != d) return false;
+        }
+        const auto a = root(components[0]), b = root(components[1]);
+        if (a == b) return false;
+        roots[a] = b;
+    }
+    for (int d = Top; d <= Bottom; ++d) {
+        vector<bool> pins(job.sides[d] ? job.sides[d]->getNumPins() : 0, false);
+        for (const auto& component : topology.components) {
+            if (component.die != d) continue;
+            for (int pin : component.pins) {
+                if (pin < 0 || pin >= pins.size() || pins[pin]) return false;
+                pins[pin] = true;
+            }
+        }
+        if (std::find(pins.begin(), pins.end(), false) != pins.end()) return false;
+    }
+    return true;
 }
 
 RoutedNet evaluateTopology(const Topology& topology, const vector<int>& sites, const Job& job,
@@ -562,16 +748,129 @@ RoutedNet evaluateTopology(const Topology& topology, const vector<int>& sites, c
         if (!net.getRoutingTree()) return {};
         result.components[d].push_back(std::move(net));
     }
-    for (int d = Top; d <= Bottom; ++d) result.cost += graph.dies[d].graph().getForestCost(result.components[d]);
+    for (int d = Top; d <= Bottom; ++d) {
+        result.cost += graph.dies[d].graph().getForestCost(result.components[d], graph.policy.uniqueSteps);
+    }
     return result;
+}
+
+void measureReroute(RoutedNet& route, const F2fGraph& graph) {
+    route.wireOverflow = 0;
+    route.resourceOverflow = 0;
+    for (int d = Top; d <= Bottom; ++d) {
+        const auto metrics = graph.dies[d].graph().measureForest(route.components[d], true, graph.policy.uniqueSteps);
+        route.wireOverflow += metrics.wireOverflowDelta;
+        route.resourceOverflow += metrics.resourceOverflowDelta;
+    }
+}
+
+bool improves(const RoutedNet& candidate, const RoutedNet& previous, double eps) {
+    if (!std::isfinite(candidate.cost)) return false;
+    if (!std::isfinite(previous.cost)) return true;
+    if (std::abs(candidate.wireOverflow - previous.wireOverflow) > eps) {
+        return candidate.wireOverflow < previous.wireOverflow;
+    }
+    if (std::abs(candidate.resourceOverflow - previous.resourceOverflow) > eps) {
+        return candidate.resourceOverflow < previous.resourceOverflow;
+    }
+    if (std::abs(candidate.cost - previous.cost) > eps) return candidate.cost < previous.cost;
+    return candidate.sites.size() < previous.sites.size();
+}
+
+struct SiteCombination {
+    vector<int> sites;
+    vector<Box> bounds;
+    double estimate = 0;
+    bool boundary = false;
+};
+
+vector<SiteCombination> beamSites(F2fGraph& graph, const Topology& topology, const Job& job,
+                                  const vector<vector<int>>& options, const Parameters& params,
+                                  int& collisions) {
+    const int count = topology.crossings.size();
+    vector<int> order(count);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+        return options[a].size() < options[b].size();
+    });
+    vector<SiteCombination> beam(1), next;
+    beam.front().sites.assign(count, -1);
+    for (const auto& component : topology.components) {
+        const auto& die = graph.dies[component.die];
+        Box bounds;
+        for (int pin : component.pins) {
+            bounds.Update(die.packagePoint(job.sides[component.die]->getPinAccessPoints()[pin].front()));
+        }
+        beam.front().bounds.push_back(bounds);
+    }
+    for (int anchor : order) {
+        const auto& crossing = topology.crossings[anchor];
+        for (const auto& state : beam) {
+            for (int rank = 0; rank < options[anchor].size(); ++rank) {
+                const int id = options[anchor][rank];
+                if (std::find(state.sites.begin(), state.sites.end(), id) != state.sites.end()) {
+                    ++collisions;
+                    continue;
+                }
+                SiteCombination candidate = state;
+                candidate.sites[anchor] = id;
+                candidate.boundary |= rank >= (options[anchor].size() + 1) / 2;
+                const auto& site = graph.sites[id];
+                for (int d = Top; d <= Bottom; ++d) {
+                    const auto& die = graph.dies[d];
+                    Box& bounds = candidate.bounds[crossing.components[d]];
+                    const DBU oldLength = bounds.IsValid() ? bounds.hp() : 0;
+                    const XY oldCenter = bounds.IsValid() ? XY(bounds.cx(), bounds.cy()) : site.position;
+                    bounds.Update(site.position);
+                    // 分量包围盒的增量近似多落点共享路径；这里只排序，不当作真实树长。
+                    candidate.estimate += params.weight_wire_length * (bounds.hp() - oldLength) /
+                        (double(die.scale) * die.graph().getM2Pitch());
+                    const auto dx = std::abs(oldCenter.x - site.position.x);
+                    const auto dy = std::abs(oldCenter.y - site.position.y);
+                    const int axis = dx + dy == 0 ? -1 : dx >= dy ? 0 : 1;
+                    candidate.estimate += approach(die, site.ends[d], axis, params);
+                    // 采样落点接入方向的局部拥塞，并保留 L1 区域的相对偏移。
+                    candidate.estimate += axis < 0 ? 0 :
+                        0.1 * estimatedWire(die, oldCenter, site.position, params);
+                    candidate.estimate += 0.25 * params.weight_wire_length * distanceToRegion(
+                        site.position, crossing.region) / (double(die.scale) * die.graph().getM2Pitch());
+                }
+                if (std::isfinite(candidate.estimate)) next.push_back(std::move(candidate));
+            }
+        }
+        std::stable_sort(next.begin(), next.end(), [](const auto& a, const auto& b) {
+            return a.estimate < b.estimate;
+        });
+        if (next.size() > graph.policy.beamWidth) next.resize(graph.policy.beamWidth);
+        beam.swap(next);
+        next.clear();
+        if (beam.empty()) break;
+    }
+    return beam;
 }
 
 RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& params, Stage stage,
                   const std::array<GridGraphView<bool>, 2>& congestion) {
     RoutedNet best;
-    int single = 0, multi = 0, unavailable = 0, incomplete = 0;
+    int single = 0, multi = 0, unavailable = 0, incomplete = 0, expansions = 0, collisions = 0, retained = 0;
+    const bool compareOverflow = graph.policy.compareOld && stage != Stage::Pattern;
+    const bool check = graph.policy.budgetDp || graph.policy.beam || graph.policy.compareOld || graph.policy.uniqueSteps;
     auto evaluate = [&](const Topology& topology, const vector<int>& sites) {
-        auto plan = evaluateTopology(topology, sites, job, graph, params, stage, congestion);
+        RoutedNet plan;
+        if (!check || validTopology(topology, job, sites, graph, id)) {
+            plan = evaluateTopology(topology, sites, job, graph, params, stage, congestion);
+        }
+        if (compareOverflow && std::isfinite(plan.cost)) measureReroute(plan, graph);
+        const bool wouldImprove = improves(plan, best, 0.0);
+        if (wouldImprove && check) {
+            for (int d = Top; d <= Bottom; ++d) {
+                for (const auto& component : plan.components[d]) {
+                    if (!graph.dies[d].graph().connectsPins(component)) {
+                        plan.cost = std::numeric_limits<CostT>::infinity();
+                    }
+                }
+            }
+        }
         single += sites.size() == 1;
         multi += sites.size() > 1;
         if (graph.diagnostics.enabled()) {
@@ -580,15 +879,19 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
             if (std::isfinite(plan.cost)) event["metrics"] = routeDiagnostics(plan, graph);
             graph.diagnostics.write(event);
         }
-        if (plan.cost < best.cost || (plan.cost == best.cost && sites.size() < best.sites.size())) {
+        const double score = plan.cost;
+        if (improves(plan, best, 0.0)) {
             best = std::move(plan);
         }
+        return score;
     };
     auto finish = [&] {
         if (graph.diagnostics.enabled()) {
             graph.diagnostics.write({{"type", "search"}, {"net", id}, {"stage", phase(stage)},
                 {"single_evaluated", single}, {"multi_evaluated", multi}, {"empty_site_lists", unavailable},
-                {"incomplete_combinations", incomplete}, {"feasible", std::isfinite(best.cost)}});
+                {"incomplete_combinations", incomplete}, {"expansions", expansions},
+                {"retained_dp_topologies", retained}, {"beam_collision_rejections", collisions},
+                {"feasible", std::isfinite(best.cost)}});
         }
         return std::move(best);
     };
@@ -597,39 +900,99 @@ RoutedNet planJob(F2fGraph& graph, const Job& job, int id, const Parameters& par
         evaluate(base, {});
         return finish();
     }
+    auto fixedAnchor = [&](const Topology& topology) {
+        if (job.fixedSite < 0) return -1;
+        const auto& p = graph.sites[job.fixedSite].position;
+        return static_cast<int>(std::min_element(topology.crossings.begin(), topology.crossings.end(),
+            [&](const Crossing& a, const Crossing& b) {
+                return distanceToRegion(p, a.region) < distanceToRegion(p, b.region);
+            }) - topology.crossings.begin());
+    };
+    auto searchPositions = [&](const Topology& topology) {
+        const int fixed = fixedAnchor(topology);
+        int width = std::min(graph.policy.maxSites, stage == Stage::Pattern ? 6 : 10);
+        std::set<vector<int>> evaluated;
+        double bestScore = std::numeric_limits<double>::infinity();
+        bool boundary = false;
+        while (true) {
+            vector<vector<int>> options;
+            for (int i = 0; i < topology.crossings.size(); ++i) {
+                if (i == fixed) options.push_back({job.fixedSite});
+                else {
+                    auto sites = graph.candidates(topology.crossings[i].region, id, width);
+                    sites.erase(std::remove(sites.begin(), sites.end(), job.fixedSite), sites.end());
+                    options.push_back(std::move(sites));
+                }
+                unavailable += options.back().empty();
+            }
+            if (topology.crossings.size() == 1) {
+                // 单站点直接测实际局部布线；无须用束搜索近似同一锚点。
+                for (int i = 0; i < options[0].size(); ++i) {
+                    vector<int> one{options[0][i]};
+                    if (!evaluated.insert(one).second) continue;
+                    const double score = evaluate(topology, one);
+                    if (score < bestScore) {
+                        bestScore = score;
+                        boundary = i >= (options[0].size() + 1) / 2;
+                    }
+                }
+            } else {
+                auto beam = beamSites(graph, topology, job, options, params, collisions);
+                incomplete += beam.empty();
+                for (const auto& state : beam) {
+                    if (!evaluated.insert(state.sites).second) continue;
+                    const double score = evaluate(topology, state.sites);
+                    if (score < bestScore) {
+                        bestScore = score;
+                        boundary = state.boundary;
+                    }
+                }
+            }
+            // 无可布候选或真实成本最佳方案落在搜索后半区时扩张。
+            if (width >= graph.policy.maxSites || (std::isfinite(bestScore) && !boundary)) break;
+            width = std::min(2 * width, graph.policy.maxSites);
+            ++expansions;
+        }
+    };
     const std::size_t limit = stage == Stage::Pattern ? 8 : 20;
-    auto baseOptions = job.fixedSite >= 0 ? vector<int>{job.fixedSite}
-                                         : graph.candidates(job.searchRegion, id, limit);
-    unavailable += baseOptions.empty();
-    if (job.fixedSite < 0 && job.route.sites.size() == 1 &&
-        std::find(baseOptions.begin(), baseOptions.end(), job.route.sites.front()) == baseOptions.end()) {
-        baseOptions.push_back(job.route.sites.front());
+    if (graph.policy.beam) {
+        searchPositions(base);
+        if (job.fixedSite < 0 && job.route.sites.size() == 1) evaluate(base, job.route.sites);
+    } else {
+        auto baseOptions = job.fixedSite >= 0 ? vector<int>{job.fixedSite}
+                                             : graph.candidates(job.searchRegion, id, limit);
+        unavailable += baseOptions.empty();
+        if (job.fixedSite < 0 && job.route.sites.size() == 1 &&
+            std::find(baseOptions.begin(), baseOptions.end(), job.route.sites.front()) == baseOptions.end()) {
+            baseOptions.push_back(job.route.sites.front());
+        }
+        for (int site : baseOptions) evaluate(base, {site});
     }
-    for (int site : baseOptions) evaluate(base, {site});
 
     if (job.sides[Top]->getNumPins() + job.sides[Bottom]->getNumPins() <= 2) return finish();
     const auto tree = projectSteiner(job, graph);
     if (tree.empty()) return finish();
-    for (bool pinAffinity : {false, true}) {
-        auto topology = labelTopology(tree, pinAffinity);
-        if (topology.crossings.size() < 2 || graph.hbtCost * topology.crossings.size() >= best.cost) continue;
+    vector<Topology> topologies;
+    if (graph.policy.budgetDp && tree.size() <= graph.policy.maxNodes) {
+        topologies = budgetTopologies(tree, job, graph, params);
+        retained = topologies.size();
+    } else {
+        for (bool pinAffinity : {false, true}) topologies.push_back(labelTopology(tree, pinAffinity));
+    }
+    for (const auto& topology : topologies) {
+        if (topology.crossings.empty() || (!graph.policy.budgetDp && topology.crossings.size() < 2) ||
+            (graph.policy.budgetDp && topology.crossings.size() > graph.policy.maxHbt) ||
+            (!compareOverflow && graph.hbtCost * topology.crossings.size() >= best.cost)) continue;
+        if (graph.policy.beam) {
+            searchPositions(topology);
+            continue;
+        }
         vector<vector<int>> options;
         for (const auto& crossing : topology.crossings) {
             options.push_back(graph.candidates(crossing.region, id, limit));
             unavailable += options.back().empty();
         }
-        int fixedCrossing = -1;
-        if (job.fixedSite >= 0) {
-            const auto& p = graph.sites[job.fixedSite].position;
-            auto distance = [&](const Crossing& edge) {
-                const auto& b = edge.region;
-                return std::max({DBU(0), b.x.low - p.x, p.x - b.x.high}) +
-                       std::max({DBU(0), b.y.low - p.y, p.y - b.y.high});
-            };
-            fixedCrossing = std::min_element(topology.crossings.begin(), topology.crossings.end(),
-                [&](const Crossing& a, const Crossing& b) { return distance(a) < distance(b); }) -
-                topology.crossings.begin();
-        }
+        const int fixedCrossing = fixedAnchor(topology);
         // Rank-diverse assignments bound the product of per-anchor candidates.
         // A candidate assignment may use each physical site at most once.
         for (std::size_t rank = 0; rank < (stage == Stage::Pattern ? 3u : 6u); ++rank) {
@@ -660,6 +1023,7 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
     for (Stage stage : {Stage::Pattern, Stage::Detour, Stage::Maze}) {
         int routed = 0;
         int moved = 0;
+        int restored = 0;
         std::array<GridGraphView<bool>, 2> congestion;
         if (stage == Stage::Detour) {
             for (int d = Top; d <= Bottom; ++d) graph.dies[d].graph().extractCongestionView(congestion[d]);
@@ -695,8 +1059,19 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
                 graph.apply(i, job.route, true);
             }
             RoutedNet plan;
+            bool keepOld = false;
             try {
                 plan = planJob(graph, job, i, params, stage, congestion);
+                if (stage != Stage::Pattern && graph.policy.compareOld && std::isfinite(plan.cost)) {
+                    // 旧路由缓存的代价来自上一次求解，必须在旧资源已释放时重新估算。
+                    job.route.cost = graph.hbtCost * job.route.sites.size();
+                    for (int d = Top; d <= Bottom; ++d) {
+                        job.route.cost += graph.dies[d].graph().getForestCost(
+                            job.route.components[d], graph.policy.uniqueSteps);
+                    }
+                    measureReroute(job.route, graph);
+                    keepOld = !improves(plan, job.route, 1e-8);
+                }
             } catch (...) {
                 if (stage != Stage::Pattern) graph.apply(i, job.route, false);
                 throw;
@@ -709,16 +1084,23 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
                 }
                 if (stage != Stage::Pattern) {
                     graph.apply(i, job.route, false);
+                    ++restored;
                     continue;
                 }
                 const auto& net = job.sides[Top] ? job.sides[Top] : job.sides[Bottom];
                 throw std::runtime_error("No feasible route for " + net->getName());
             }
             if (graph.diagnostics.enabled()) {
-                Json event = {{"type", "decision"}, {"net", i}, {"stage", phase(stage)}, {"action", "accept"},
-                              {"sites", plan.sites}, {"new", routeDiagnostics(plan, graph)}};
+                Json event = {{"type", "decision"}, {"net", i}, {"stage", phase(stage)},
+                              {"action", keepOld ? "restore_no_gain" : "accept"},
+                              {"sites", keepOld ? job.route.sites : plan.sites}, {"new", routeDiagnostics(plan, graph)}};
                 if (stage != Stage::Pattern) event["old"] = routeDiagnostics(job.route, graph);
                 graph.diagnostics.write(event);
+            }
+            if (keepOld) {
+                graph.apply(i, job.route, false);
+                ++restored;
+                continue;
             }
             if (!job.route.sites.empty() && job.route.sites != plan.sites) ++moved;
             job.route = std::move(plan);
@@ -726,7 +1108,8 @@ void routeJobs(F2fGraph& graph, vector<Job>& jobs, const Parameters& params) {
             ++routed;
         }
         log() << "F2F routing stage " << static_cast<int>(stage) + 1 << ": "
-              << routed << " routes committed, " << moved << " nets changed HBT assignments\n";
+              << routed << " routes committed, " << moved << " nets changed HBT assignments, "
+              << restored << " old routes restored\n";
         if (graph.diagnostics.enabled()) {
             Json dies = Json::array();
             for (auto& die : graph.dies) {

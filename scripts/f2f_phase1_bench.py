@@ -16,10 +16,10 @@ FIELDS = ("benchmark", "mode", "wirelength_um", "via_count", "used_hbt", "wire_o
           "wall_seconds", "max_rss_kb", "exit_code")
 
 
-def run(binary, out, mode, cases):
+def run(binary, out, mode, cases, cost, disable):
     out.mkdir(parents=True, exist_ok=True)
     with (out / "summary.tsv").open("w") as summary:
-        writer = csv.DictWriter(summary, FIELDS, delimiter="\t")
+        writer = csv.DictWriter(summary, FIELDS, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for case in cases:
             work = out / case
@@ -29,7 +29,8 @@ def run(binary, out, mode, cases):
             config = {
                 "package_dbu": 2000, "paired_ports": True, "hbt_output": "hbt.tsv",
                 "candidate_mode": mode, "diagnostics": "diagnostics.jsonl",
-                "hbt": {"origin": [3000, 3000], "pitch": [6000, 6000], "min_spacing": 6000, "cost": 4.0},
+                "candidate_search": {key: False for key in disable},
+                "hbt": {"origin": [3000, 3000], "pitch": [6000, 6000], "min_spacing": 6000, "cost": cost},
             }
             for side, suffix in (("top", "top"), ("bottom", "btm")):
                 config[side] = {
@@ -85,5 +86,8 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path)
     parser.add_argument("--mode", choices=("legacy", "improved"), default="improved")
     parser.add_argument("--cases", nargs="+", choices=CASES, default=CASES)
+    parser.add_argument("--cost", type=float, default=4.0)
+    parser.add_argument("--disable", nargs="*", default=(),
+                        choices=("budget_dp", "position_beam", "compare_old", "deduplicate_steps"))
     args = parser.parse_args()
-    run(args.binary.resolve(), args.output.resolve(), args.mode, args.cases)
+    run(args.binary.resolve(), args.output.resolve(), args.mode, args.cases, args.cost, args.disable)
