@@ -19,6 +19,7 @@ MetalLayer::MetalLayer(const Rsyn::PhysicalLayer& rsynLayer, const vector<Rsyn::
         }
     }
     
+    if (pitch <= 0) throw std::runtime_error("Missing preferred tracks on " + name);
     // Design rules not parsed thoroughly
     // Min area
     minArea = static_cast<DBU>(std::round(layer->area() * libDBU * libDBU));

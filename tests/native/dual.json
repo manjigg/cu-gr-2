@@ -1,0 +1,146 @@
+{
+  "bonded_dbu": 2000,
+  "dies": [
+    {
+      "lef": "../../benchmarks/NangateOpenCellLibraryWithMacro.lef",
+      "def": "top.def",
+      "transform": {
+        "axes": [
+          0,
+          1
+        ],
+        "signs": [
+          1,
+          1
+        ],
+        "offset": [
+          0,
+          0
+        ]
+      },
+      "via_capacity": 2
+    },
+    {
+      "lef": "../../benchmarks/NangateOpenCellLibraryWithMacro.lef",
+      "def": "bottom.def",
+      "transform": {
+        "axes": [
+          0,
+          1
+        ],
+        "signs": [
+          -1,
+          1
+        ],
+        "offset": [
+          12600,
+          0
+        ]
+      },
+      "via_capacity": 2
+    }
+  ],
+  "mapping": [
+    {
+      "top": {
+        "net": "A"
+      },
+      "bottom": {
+        "net": "A"
+      }
+    },
+    {
+      "top": {
+        "net": "B"
+      },
+      "bottom": {
+        "net": "B"
+      }
+    }
+  ],
+  "weights": {
+    "wire_um": 1,
+    "via": 1,
+    "hbt": 4,
+    "congestion": 0
+  },
+  "bonding": {
+    "origin": [
+      1500,
+      1500
+    ],
+    "pitch": [
+      1000,
+      1000
+    ],
+    "min_spacing": 1000,
+    "keepouts": [
+      [
+        [
+          4400,
+          1400
+        ],
+        [
+          4600,
+          1600
+        ]
+      ]
+    ],
+    "sites": [
+      {
+        "id": 0,
+        "xy": [
+          1500,
+          1500
+        ],
+        "layers": [
+          [
+            "metal2",
+            "metal2"
+          ],
+          [
+            "metal3",
+            "metal3"
+          ]
+        ],
+        "capacity": 1
+      },
+      {
+        "id": 1,
+        "xy": [
+          2500,
+          1500
+        ],
+        "layers": [
+          [
+            "metal2",
+            "metal2"
+          ],
+          [
+            "metal3",
+            "metal3"
+          ]
+        ],
+        "capacity": 1
+      },
+      {
+        "id": 2,
+        "xy": [
+          4500,
+          1500
+        ],
+        "layers": [
+          [
+            "metal2",
+            "metal2"
+          ],
+          [
+            "metal3",
+            "metal3"
+          ]
+        ],
+        "capacity": 1
+      }
+    ]
+  }
+}

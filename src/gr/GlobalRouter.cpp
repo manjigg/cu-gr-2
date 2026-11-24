@@ -147,12 +147,17 @@ void GlobalRouter::sortNetIndices(vector<int>& netIndices) const {
 }
 
 void GlobalRouter::getGuides(const GRNet& net, vector<std::pair<int, utils::BoxT<int>>>& guides) {
+    componentGuides(gridGraph,parameters,net,guides,areaOfPinPatches,areaOfWirePatches);
+}
+void GlobalRouter::componentGuides(const GridGraph& gridGraph,const Parameters& parameters,const GRNet& net,
+        vector<std::pair<int, utils::BoxT<int>>>& guides,int& areaOfPinPatches,int& areaOfWirePatches) {
     auto& routingTree = net.getRoutingTree();
     if (!routingTree) return;
     // 0. Basic guides
     GRTreeNode::preorder(routingTree, [&](std::shared_ptr<GRTreeNode> node) {
         for (const auto& child : node->children) {
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 guides.emplace_back(
                     node->layerIdx, utils::BoxT<int>(
                         min(node->x, child->x), min(node->y, child->y),
@@ -208,7 +213,8 @@ void GlobalRouter::getGuides(const GRNet& net, vector<std::pair<int, utils::BoxT
     // 2. Wire segment patches
     GRTreeNode::preorder(routingTree, [&](std::shared_ptr<GRTreeNode> node) {
         for (const auto& child : node->children) {
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 double wire_patch_threshold = parameters.wire_patch_threshold;
                 unsigned direction = gridGraph.getLayerDirection(node->layerIdx);
                 int l = min((*node)[direction], (*child)[direction]);
@@ -252,7 +258,8 @@ void GlobalRouter::printStatistics() const {
     for (const auto& net : nets) {
         GRTreeNode::preorder(net.getRoutingTree(), [&] (std::shared_ptr<GRTreeNode> node) {
             for (const auto& child : node->children) {
-                if (node->layerIdx == child->layerIdx) {
+                if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                     unsigned direction = gridGraph.getLayerDirection(node->layerIdx);
                     int l = min((*node)[direction], (*child)[direction]);
                     int h = max((*node)[direction], (*child)[direction]);

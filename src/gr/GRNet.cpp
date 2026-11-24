@@ -1,7 +1,7 @@
 #include "GRNet.h"
 
 
-GRNet::GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph) {
+GRNet::GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph, int dieIdx) {
     index = baseNet.getIndex();
     name = baseNet.getName();
     const auto& pinRefs = baseNet.getAllPinRefs();
@@ -15,10 +15,10 @@ GRNet::GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGrap
             utils::BoxT<int> cells = gridGraph.rangeSearchCells(pinShape);
             for (int x = cells.x.low; x <= cells.x.high; x++) {
                 for (int y = cells.y.low; y <= cells.y.high; y++) {
-                    GRPoint point(pinShape.layerIdx, x, y);
+                    GRPoint point(dieIdx, pinShape.layerIdx, x, y);
                     uint64_t hash = gridGraph.hashCell(point);
                     if (included.find(hash) == included.end()) {
-                        pinAccessPoints[pinIndex].emplace_back(pinShape.layerIdx, x, y);
+                        pinAccessPoints[pinIndex].push_back(point);
                         included.insert(hash);
                     }
                 }

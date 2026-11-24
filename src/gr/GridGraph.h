@@ -25,7 +25,7 @@ public:
     inline unsigned getLayerDirection(int layerIndex) const { return layerDirections[layerIndex]; }
     
     inline uint64_t hashCell(const GRPoint& point) const {
-        return ((uint64_t)point.layerIdx * xSize + point.x) * ySize + point.y;
+        return (((uint64_t)point.dieIdx * nLayers + point.layerIdx) * xSize + point.x) * ySize + point.y;
     };
     inline uint64_t hashCell(const int x, const int y) const { return (uint64_t)x * ySize + y; }
     inline DBU getGridline(const unsigned dimension, const int index) const { return gridlines[dimension][index]; }
@@ -33,6 +33,10 @@ public:
     utils::BoxT<int> rangeSearchCells(const utils::BoxT<DBU>& box) const;
     inline GraphEdge getEdge(const int layerIndex, const int x, const int y) const {return graphEdges[layerIndex][x][y]; }
     
+    // 同步事务账本的实际占用，使原 CUGR 的 detour 与 guide patch 读取相同资源。
+    void setWireDemand(int layer,int x,int y,CapacityT demand) {
+        graphEdges.at(layer).at(x).at(y).demand=demand;
+    }
     // Costs
     DBU getEdgeLength(unsigned direction, unsigned edgeIndex) const;
     CostT getWireCost(const int layerIndex, const utils::PointT<int> u, const utils::PointT<int> v) const;

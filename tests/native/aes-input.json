@@ -1,0 +1,8 @@
+{
+  "bonded_dbu": 2000,
+  "dies": [
+    {"lef":"../../benchmarks/NangateOpenCellLibraryWithMacro.lef","def":"../../benchmarks/aes/aes_top_hbt.place.def","transform":{"axes":[0,1],"signs":[1,1],"offset":[0,0]}},
+    {"lef":"../../benchmarks/NangateOpenCellLibraryWithMacro.lef","def":"../../benchmarks/aes/aes_btm_hbt.place.def","transform":{"axes":[0,1],"signs":[-1,1],"offset":[304960,0]}}
+  ],
+  "mapping":[{"top":{"net":"_00002_","cut_port":"T0"},"bottom":{"net":"_00002_","cut_port":"T0"}}]
+}

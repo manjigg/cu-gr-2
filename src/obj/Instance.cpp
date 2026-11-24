@@ -25,6 +25,7 @@ Macro::Macro(int idx, const Rsyn::Cell& cell, const Rsyn::PhysicalDesign& physic
         if (!pin.isPowerOrGround()) {
             pinIndex = pins.size();
             pinIndices.emplace(pin.getName(), pinIndex);
+            pinNames.push_back(pin.getName());
             pins.emplace_back();
         }
         

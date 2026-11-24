@@ -5,8 +5,12 @@
 
 class GRNet {
 public:
-    GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph);
+    GRNet(const Net& baseNet, const Design& design, const GridGraph& gridGraph, int dieIdx = 0);
     
+    GRNet(int id,std::string netName,vector<vector<GRPoint>> access,std::shared_ptr<GRTreeNode> tree)
+        : index(id),name(std::move(netName)),pinAccessPoints(std::move(access)),routingTree(std::move(tree)) {
+        for(const auto& pin:pinAccessPoints) for(const auto& p:pin) boundingBox.Update(p);
+    }
     int getIndex() const { return index; }
     std::string getName() const { return name; }
     int getNumPins() const { return pinAccessPoints.size(); }

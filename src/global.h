@@ -51,6 +51,9 @@ struct Parameters {
     std::string lef_file;
     std::string def_file;
     std::string out_file;
+    std::string inspect_native;
+    std::string native_design;
+    std::string native_reachability;
     int threads = 1;
     // 
     const double weight_wire_length = 0.5;
@@ -78,7 +81,16 @@ struct Parameters {
             exit(1);
         }
         for (int i = 1; i < argc; i++) {
-            if (strcmp(argv[i], "-lef") == 0) {
+            if (i+1==argc && (strcmp(argv[i], "-lef")==0 || strcmp(argv[i], "-def")==0 ||
+                strcmp(argv[i], "-output")==0 || strcmp(argv[i], "-threads")==0 ||
+                strcmp(argv[i], "-native")==0 || strcmp(argv[i], "-check-native")==0 || strcmp(argv[i], "-inspect-native")==0))
+                throw std::invalid_argument("Missing command-line value");
+            if (strcmp(argv[i], "-check-native")==0) native_reachability=argv[++i];
+            else if (strcmp(argv[i], "-native")==0) {
+                native_design=argv[++i];
+            } else if (strcmp(argv[i], "-inspect-native") == 0 && i+1<argc) {
+                inspect_native=argv[++i];
+            } else if (strcmp(argv[i], "-lef") == 0) {
                 lef_file = argv[++i];
             } else if (strcmp(argv[i], "-def") == 0) {
                 def_file = argv[++i];

@@ -5,7 +5,7 @@ void Design::read(std::string lef_file, std::string def_file) {
     loghline();
     const Rsyn::Json params = {{"lefFile", lef_file}, {"defFile", def_file}};
     Rsyn::ISPD2018Reader reader;
-    reader.load(params);
+    if (!reader.load(params)) throw std::runtime_error("Rsyn import failed: " + def_file);
     log() << "Rsyn finished loading lef/def" << std::endl;
     // GET DATA FOR DESIGN 
     
@@ -20,6 +20,10 @@ void Design::read(std::string lef_file, std::string def_file) {
     dieRegion = getBoxFromRsynBounds(dieBound);
     
     
+    for (const auto via : physicalDesign.allPhysicalVias()) {
+        auto lo = via.getBottomLayer(), hi = via.getTopLayer();
+        if (lo && hi && via.getCutLayer()) vias[{lo.getRelativeIndex(), hi.getRelativeIndex()}].push_back(via.getName());
+    }
     // 1. Get layers
     for (const Rsyn::PhysicalLayer& rsynLayer : physicalDesign.allPhysicalLayers()) {
         if (rsynLayer.getType() == Rsyn::ROUTING) {
@@ -81,18 +85,19 @@ void Design::read(std::string lef_file, std::string def_file) {
             if (rsynPin.isPort()) {
                 auto p = instanceIndices.find(rsynPin.getName());
                 if (p == instanceIndices.end()) {
-                    log() << "Error: cannot find instance " << rsynPin.getName() << std::endl;
+                    throw std::runtime_error("Unresolved port " + rsynPin.getName());
                 } else {
                     net.addPinRef(p->second, -1);
                 }
             } else {
                 auto p = instanceIndices.find(rsynPin.getInstance().getName());
                 if (p == instanceIndices.end()) {
-                    log() << "Error: cannot find instance " << rsynPin.getInstance().getName() << std::endl;
+                    throw std::runtime_error("Unresolved instance " + rsynPin.getInstance().getName());
                 }
                 int instanceIndex = p->second;
                 Macro& macro = macros[instances[instanceIndex].getMacroIndex()];
                 auto pinIndex = macro.getPinIndex(rsynPin.getName());
+                if (pinIndex < 0) throw std::runtime_error("Unresolved pin " + rsynPin.getName());
                 net.addPinRef(instanceIndex, pinIndex);
             }
         }
@@ -188,6 +193,7 @@ void Design::read(std::string lef_file, std::string def_file) {
              for (int i = low; i + defaultGridlineSpacing < high; i += defaultGridlineSpacing) {
                  gridlines[dimension].push_back(i);
              }
+             if (gridlines[dimension].empty()) gridlines[dimension].push_back(low);
              if (gridlines[dimension].back() != high)
                  gridlines[dimension].push_back(high);
          }

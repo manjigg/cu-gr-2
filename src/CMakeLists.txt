@@ -3,7 +3,7 @@
 #########
 
 # Specify the minimum version for CMake
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.6)
 
 # Message
 message(STATUS "Global Router CUGR 2.0")
@@ -36,7 +36,13 @@ set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Werror=return-type")
 # Check Dependencies #
 ######################
 set(Boost_USE_STATIC_LIBS ON)
-find_package(Boost COMPONENTS system filesystem program_options REQUIRED)
+option(CUGR_NATIVE_3D "Build the POSIX native dual-die importer and router" ON)
+set(BOOST_COMPONENTS system filesystem program_options)
+if(CUGR_NATIVE_3D)
+    list(APPEND BOOST_COMPONENTS serialization)
+    add_definitions(-DCUGR_NATIVE_3D -DCUGR_LUT_DIR="${PATH_FLUTE}")
+endif()
+find_package(Boost COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
 # find_package(Threads)
 
 ###############
@@ -53,6 +59,9 @@ file(GLOB_RECURSE SRC_FILES_CUGR
     ${PATH_CUGR}/*.cpp
     ${PATH_CUGR}/*.c)
 
+if(NOT CUGR_NATIVE_3D)
+    list(FILTER SRC_FILES_CUGR EXCLUDE REGEX "/native/")
+endif()
 set(SRC_FILES ${SRC_FILES_RSYN} ${SRC_FILES_FLUTE} ${SRC_FILES_CUGR})
 
 #################
@@ -72,7 +81,9 @@ endif()
 # Targets #
 ###########
 
-add_executable(route ${SRC_FILES})
+list(REMOVE_ITEM SRC_FILES ${PATH_CUGR}/main.cpp)
+add_library(cugr_objects OBJECT ${SRC_FILES})
+add_executable(route main.cpp $<TARGET_OBJECTS:cugr_objects>)
 
 #######################
 # Include Directories #
@@ -98,3 +109,23 @@ target_link_libraries(route def)
 # Boost
 target_include_directories(route PUBLIC ${Boost_INCLUDE_DIR})
 target_link_libraries(route ${Boost_LIBRARIES})
+
+if(CUGR_NATIVE_3D)
+    include(CTest)
+    if(BUILD_TESTING)
+        add_executable(native_resources_test ../tests/native/resources.cpp $<TARGET_OBJECTS:cugr_objects>)
+        target_link_libraries(native_resources_test lef def ${Boost_LIBRARIES} pthread)
+        add_test(NAME native_resources COMMAND native_resources_test ${PATH_CUGR}/../tests/native/dual.json)
+        add_test(NAME native_import COMMAND python3 ${PATH_CUGR}/../tests/native/test_import.py $<TARGET_FILE:route>)
+    endif()
+endif()
+
+if(CUGR_NATIVE_3D AND BUILD_TESTING)
+    add_executable(native_pattern_test ../tests/native/pattern.cpp $<TARGET_OBJECTS:cugr_objects>)
+    target_link_libraries(native_pattern_test lef def ${Boost_LIBRARIES} pthread)
+    add_test(NAME native_flow COMMAND python3 ${PATH_CUGR}/../tests/native/test_flow.py $<TARGET_FILE:route>)
+    add_test(NAME native_pattern COMMAND native_pattern_test ${PATH_CUGR}/../tests/native/dual.json)
+    foreach(table POWV9.dat POST9.dat)
+        configure_file(${PATH_FLUTE}/${table} ${CMAKE_BINARY_DIR}/${table} COPYONLY)
+    endforeach()
+endif()

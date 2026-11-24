@@ -1,0 +1,104 @@
+{
+  "bonded_dbu": 2000,
+  "dies": [
+    {
+      "lef": "three-metal.lef",
+      "def": "top.def",
+      "transform": {
+        "axes": [
+          0,
+          1
+        ],
+        "signs": [
+          1,
+          1
+        ],
+        "offset": [
+          0,
+          0
+        ]
+      },
+      "via_capacity": 2,
+      "landing_half_width_dbu": 100
+    },
+    {
+      "lef": "three-metal.lef",
+      "def": "bottom.def",
+      "transform": {
+        "axes": [
+          0,
+          1
+        ],
+        "signs": [
+          1,
+          1
+        ],
+        "offset": [
+          0,
+          0
+        ]
+      },
+      "via_capacity": 2,
+      "landing_half_width_dbu": 100
+    }
+  ],
+  "mapping": [
+    {
+      "top": {
+        "net": "N"
+      },
+      "bottom": {
+        "net": "N"
+      }
+    }
+  ],
+  "weights": {
+    "wire_um": 1,
+    "via": 1,
+    "hbt": 1,
+    "congestion": 0
+  },
+  "bonding": {
+    "origin": [
+      2100,
+      2100
+    ],
+    "pitch": [
+      8400,
+      8400
+    ],
+    "min_spacing": 8400,
+    "keepouts": [],
+    "sites": [
+      {
+        "id": 0,
+        "xy": [
+          2100,
+          2100
+        ],
+        "layers": [
+          [
+            "metal3",
+            "metal3"
+          ]
+        ],
+        "capacity": 1
+      },
+      {
+        "id": 1,
+        "xy": [
+          10500,
+          2100
+        ],
+        "layers": [
+          [
+            "metal3",
+            "metal3"
+          ]
+        ],
+        "capacity": 1
+      }
+    ]
+  },
+  "stage_seconds": 60
+}

@@ -68,6 +68,7 @@ void PatternRoute::constructSteinerTree() {
             i++;
         }
         Tree flutetree = flute(degree, xs, ys, ACCURACY);
+        std::unique_ptr<Branch,decltype(&free)> branchMemory(flutetree.branch,free);
         const int numBranches = degree + degree - 2;
         vector<utils::PointT<int>> steinerPoints;
         steinerPoints.reserve(numBranches);
@@ -222,6 +223,7 @@ void PatternRoute::constructRoutingDAG() {
             i++;
         }
         Tree flutetree = flute(degree, xs, ys, ACCURACY);
+        std::unique_ptr<Branch,decltype(&free)> branchMemory(flutetree.branch,free);
         const int numBranches = degree + degree - 2;
         vector<utils::PointT<int>> steinerPoints;
         steinerPoints.reserve(numBranches);
@@ -304,7 +306,7 @@ void PatternRoute::constructPaths(std::shared_ptr<PatternRoutingNode>& start, st
     }
 }
 
-void PatternRoute::constructDetours(GridGraphView<bool>& congestionView) {
+void PatternRoute::constructDetours(const GridGraphView<bool>& congestionView) {
     struct ScaffoldNode {
         std::shared_ptr<PatternRoutingNode> node;
         vector<std::shared_ptr<ScaffoldNode>> children;
@@ -647,33 +649,33 @@ std::shared_ptr<GRTreeNode> PatternRoute::getRoutingTree(std::shared_ptr<Pattern
         }
         if (pathsOnLayer[parentLayerIndex].size() > 0) {
             for (auto& path : pathsOnLayer[parentLayerIndex]) {
-                routingNode->children.push_back(getRoutingTree(path, parentLayerIndex));
+                routingNode->attach(getRoutingTree(path, parentLayerIndex), GREdgeType::WIRE);
             }
         }
         for (int layerIndex = parentLayerIndex - 1; layerIndex >= 0; layerIndex--) {
             if (pathsOnLayer[layerIndex].size() > 0) {
-                lowestRoutingNode->children.push_back(std::make_shared<GRTreeNode>(layerIndex, node->x, node->y));
+                lowestRoutingNode->attach(std::make_shared<GRTreeNode>(layerIndex, node->x, node->y), GREdgeType::VIA);
                 lowestRoutingNode = lowestRoutingNode->children.back();
                 for (auto& path : pathsOnLayer[layerIndex]) {
-                    lowestRoutingNode->children.push_back(getRoutingTree(path, layerIndex));
+                    lowestRoutingNode->attach(getRoutingTree(path, layerIndex), GREdgeType::WIRE);
                 }
             }
         }
         for (int layerIndex = parentLayerIndex + 1; layerIndex < gridGraph.getNumLayers(); layerIndex++) {
             if (pathsOnLayer[layerIndex].size() > 0) {
-                highestRoutingNode->children.push_back(std::make_shared<GRTreeNode>(layerIndex, node->x, node->y));
+                highestRoutingNode->attach(std::make_shared<GRTreeNode>(layerIndex, node->x, node->y), GREdgeType::VIA);
                 highestRoutingNode = highestRoutingNode->children.back();
                 for (auto& path : pathsOnLayer[layerIndex]) {
-                    highestRoutingNode->children.push_back(getRoutingTree(path, layerIndex));
+                    highestRoutingNode->attach(getRoutingTree(path, layerIndex), GREdgeType::WIRE);
                 }
             }
         }
     }
     if (lowestRoutingNode->layerIdx > node->fixedLayers.low) {
-        lowestRoutingNode->children.push_back(std::make_shared<GRTreeNode>(node->fixedLayers.low, node->x, node->y));
+        lowestRoutingNode->attach(std::make_shared<GRTreeNode>(node->fixedLayers.low, node->x, node->y), GREdgeType::VIA);
     }
     if (highestRoutingNode->layerIdx < node->fixedLayers.high) {
-        highestRoutingNode->children.push_back(std::make_shared<GRTreeNode>(node->fixedLayers.high, node->x, node->y));
+        highestRoutingNode->attach(std::make_shared<GRTreeNode>(node->fixedLayers.high, node->x, node->y), GREdgeType::VIA);
     }
     return routingNode;
 }

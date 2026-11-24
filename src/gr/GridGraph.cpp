@@ -336,7 +336,8 @@ void GridGraph::commitVia(const int layerIndex, const utils::PointT<int> loc, co
 void GridGraph::commitTree(const std::shared_ptr<GRTreeNode>& tree, const bool reverse) {
     GRTreeNode::preorder(tree, [&](std::shared_ptr<GRTreeNode> node) {
         for (const auto& child : node->children) {
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 unsigned direction = layerDirections[node->layerIdx];
                 if (direction == MetalLayer::H) {
                     assert(node->y == child->y);
@@ -386,7 +387,8 @@ int GridGraph::checkOverflow(const std::shared_ptr<GRTreeNode>& tree) const {
     GRTreeNode::preorder(tree, [&](std::shared_ptr<GRTreeNode> node) {
         for (auto& child : node->children) {
             // Only check wires
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 num += checkOverflow(node->layerIdx, (utils::PointT<int>)*node, (utils::PointT<int>)*child);
             }
         }
@@ -399,7 +401,8 @@ std::string GridGraph::getPythonString(const std::shared_ptr<GRTreeNode>& routin
     vector<std::tuple<utils::PointT<int>, utils::PointT<int>, bool>> edges;
     GRTreeNode::preorder(routingTree, [&] (std::shared_ptr<GRTreeNode> node) {
         for (auto& child : node->children) {
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 unsigned direction = getLayerDirection(node->layerIdx);
                 int r = (*node)[1 - direction];
                 const int l = min((*node)[direction], (*child)[direction]);
@@ -521,7 +524,8 @@ void GridGraph::updateWireCostView(GridGraphView<CostT>& view, std::shared_ptr<G
     };
     GRTreeNode::preorder(routingTree, [&] (std::shared_ptr<GRTreeNode> node) {
         for (const auto& child : node->children) {
-            if (node->layerIdx == child->layerIdx) {
+            if (child->incoming == GREdgeType::HBT) throw std::logic_error("HBT passed to single-die tree traversal");
+            if (child->incoming == GREdgeType::WIRE) {
                 unsigned direction = getLayerDirection(node->layerIdx);
                 if (direction == MetalLayer::H) {
                     assert(node->y == child->y);

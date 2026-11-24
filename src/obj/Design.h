@@ -13,6 +13,15 @@ public:
         read(parameters.lef_file, parameters.def_file);
         setUnitCosts();
     }
+    // 每颗 Die 在一次性子进程里读取，父进程只持有 CUGR 自有数据。
+    static std::unique_ptr<Design> importDie(const Parameters&, const std::string& lef, const std::string& def);
+    const Instance& instance(int id) const { return instances.at(id); }
+    std::string pinName(const PinReference& pin) const {
+        const auto& cell = instances.at(pin.instanceIndex);
+        return cell.isCell() ? macros.at(cell.getMacroIndex()).getPinName(pin.pinIndex) : cell.getName();
+    }
+    const utils::BoxT<DBU>& boundary() const { return dieRegion; }
+    const std::map<std::pair<int,int>, std::vector<std::string>>& viaTypes() const { return vias; }
     DBU getLibDBU() const { return libDBU; }
 
     CostT getUnitLengthWireCost() const { return unit_length_wire_cost; }
@@ -29,6 +38,13 @@ public:
     void getAllObstacles(vector<vector<utils::BoxT<DBU>>>& allObstacles, bool skipM1 = true) const;
     
 private:
+    struct Empty {};
+    Design(const Parameters& params, Empty): parameters(params) {}
+    std::map<std::pair<int,int>, std::vector<std::string>> vias;
+    template<class Archive> void snapshot(Archive& ar) {
+        ar & libDBU & dieRegion.x.low & dieRegion.x.high & dieRegion.y.low & dieRegion.y.high;
+        ar & layers & macros & instances & nets & obstacles & gridlines & vias;
+    }
     const Parameters& parameters;
     
     DBU libDBU;

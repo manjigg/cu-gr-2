@@ -1,11 +1,15 @@
 #pragma once
 #include "global.h"
+#include <boost/serialization/access.hpp>
 
 utils::BoxT<DBU> getBoxFromRsynBounds(const Bounds& bounds);
 
 class BoxOnLayer: public utils::BoxT<DBU> {
 public:
     int layerIdx;
+    template<class Archive> void serialize(Archive& ar, unsigned) {
+        ar & layerIdx & x.low & x.high & y.low & y.high;
+    }
 
     //  constructors
     template <typename... Args>

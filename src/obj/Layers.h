@@ -1,7 +1,15 @@
 #pragma once
 #include "global.h"
+#include <boost/serialization/access.hpp>
 
 class MetalLayer {
+    friend class boost::serialization::access;
+    MetalLayer() = default;
+    template<class Archive> void serialize(Archive& ar, unsigned) {
+        ar & name & index & direction & width & minWidth & firstTrackLoc & lastTrackLoc & pitch & numTracks;
+        ar & minArea & minLength & parallelWidth & parallelLength & parallelSpacing & defaultSpacing;
+        ar & maxEolSpacing & maxEolWidth & maxEolWithin;
+    }
 public:
     const static unsigned H = 0;
     const static unsigned V = 1;
@@ -29,7 +37,7 @@ private:
     // tracks 
     DBU firstTrackLoc;
     DBU lastTrackLoc;
-    DBU pitch;
+    DBU pitch = 0;
     int numTracks;
     
     // Design rules
