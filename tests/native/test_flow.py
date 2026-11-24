@@ -4,6 +4,7 @@ import copy
 import gzip
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,7 @@ sys.path.insert(0,str(root/'scripts'))
 from native_check import check
 from native_detail import resolve_instances
 from native_joint import verify_routes
+from native_geometry import instance_names
 
 binary=Path(sys.argv[1]).resolve()
 base=root/'tests/native/clusters'
@@ -97,6 +99,14 @@ def check_joint_replay(job):
 
 
 def regress(out):
+    decode=lambda text:re.sub(r'\\(.)',r'\1',text)
+    open_db=instance_names([r'cell\\X','normal'],decode)
+    assert open_db[r'cell\\X']==open_db[r'cell\X']==r'cell\X'
+    try:
+        instance_names([r'cell\\X',r'cell\X'],decode)
+        raise AssertionError('Ambiguous OpenDB identifier accepted')
+    except ValueError:
+        pass
     records=[dict(pins=[(r'cell\X','Q')])]
     text='COMPONENTS 1 ;\n- '+r'cell\\X'+' TEST ;\nEND COMPONENTS\n'
     assert list(resolve_instances(text,records))[0]['pins']==[(r'cell\\X','Q')]
@@ -132,6 +142,22 @@ def regress(out):
         report=job/(name+'.json')
         p=subprocess.run([*replay,bad,report],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         assert p.returncode!=0 and not report.exists(),name
+    # 三对投影重合的真实端点；仅运行第一阶段，无启发式初解。最小线长需要三个 HBT。
+    three=copy.deepcopy(template)
+    three.update(stages=[1],seed_seconds=0)
+    three['weights']['hbt']=0.25
+    array=three['bonding']
+    array.update(pitch=[4200,4200],min_spacing=4200)
+    array['sites'].append(dict(array['sites'][0],id=2,xy=[6300,2100]))
+    mid='- M + NET N + DIRECTION INPUT + USE SIGNAL + LAYER metal3 ( -100 -100 ) ( 100 100 ) + FIXED ( 6300 1500 ) N ;'
+    for d,source in enumerate(three['dies']):
+        fixture=out/('three-cluster-'+str(d)+'.def')
+        fixture.write_text(Path(source['def']).read_text().replace('PINS 2 ;','PINS 3 ;')
+                           .replace('END PINS',mid+'\nEND PINS').replace('( PIN R )','( PIN R ) ( PIN M )'))
+        source['def']=str(fixture.resolve())
+    triple=run(three,out/'three-hbt')
+    assert triple['metrics']['used_hbt']==3 and abs(triple['metrics']['wirelength_um']-4.2)<1e-9
+    assert triple['inventory']['real_pins']==6 and triple['stages'][0]['candidate_generation']=='FINISHED'
     cfg=copy.deepcopy(template)
     cfg['bonding']['sites'][0]['fixed_net']=0
     run(cfg,out/'fixed')

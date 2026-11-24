@@ -5,6 +5,13 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import re
+
+
+def geometry_directory(detail,side):
+    folder=detail/side
+    recheck=folder/'geometry-recheck'/side
+    return recheck if recheck.is_dir() else folder
 
 
 def verify_routes(global_dir, detail):
@@ -21,7 +28,8 @@ def verify_routes(global_dir, detail):
     observed_pins=0
     for die,side in enumerate(('top','bottom')):
         folder=detail/side
-        audit=json.loads((folder/'geometry_audit.json').read_text())
+        source=geometry_directory(detail,side)
+        audit=json.loads((source/'geometry_audit.json').read_text())
         digest=hashlib.sha256()
         with (folder/'routed.def').open('rb') as stream:
             for chunk in iter(lambda:stream.read(1048576),b''):
@@ -59,7 +67,7 @@ def verify_routes(global_dir, detail):
             pins[name].add(terminal)
         if seen_sites!=assignments.keys():
             raise ValueError('Incomplete physical HBT endpoints on '+side)
-        with gzip.open(folder/'terminal_components.jsonl.gz','rt') as stream:
+        with gzip.open(source/'terminal_components.jsonl.gz','rt') as stream:
             for line in stream:
                 name,inst,pin,root=json.loads(line)
                 pair=(inst,pin)
@@ -99,9 +107,44 @@ def verify_routes(global_dir, detail):
                 local_components=len(owners),hbt_pairs=len(assignments),disconnected_nets=0,mixed_nets=0)
 
 
+def record_reports(global_dir,detail):
+    joint=verify_routes(global_dir,detail)
+    report={}
+    for side in ('top','bottom'):
+        folder=detail/side
+        result=json.loads((folder/'detail.json').read_text())
+        geometry=geometry_directory(detail,side)
+        audit=json.loads((geometry/'geometry_audit.json').read_text())
+        log=(folder/'router.log').read_text()
+        drc=re.findall(r'Number of violations\s*=\s*(\d+)',log)
+        via=re.findall(r'^Total number of vias = (\d+)',log,re.M)
+        length=re.findall(r'^Total wire length = ([0-9.]+) um',log,re.M)
+        if (not drc or int(drc[-1])!=result['drc'] or not via or int(via[-1])!=result['via_count']
+                or not length or float(length[-1])!=result['wirelength_um']
+                or result['routed']!=('NATIVE_DESIGN_ROUTED=1' in log)
+                or joint['hbt_pairs']!=result['hbt_endpoints']
+                or audit['physical_connectivity']['via_instances']!=result['via_count']):
+            raise ValueError('Detailed routing measurement disagrees with logs or physical geometry on '+side)
+        report[side]=dict(result,geometry=audit['status'],geometry_evidence=str(geometry.relative_to(detail)))
+    report['joint_connectivity']=joint['status']
+    report['assignment_endpoints_checked']=2*joint['hbt_pairs']
+    report['passed']=all(report[s]['routed'] and report[s]['exit_code']==0 and report[s]['drc']==0
+                         and report[s]['geometry']=='passed' for s in ('top','bottom')) and joint['status']=='passed'
+    for name,record in [('joint_geometry',joint),('verified_report',report)]:
+        path=detail/(name+'.tmp')
+        path.write_text(json.dumps(record,indent=2)+'\n')
+        path.replace(detail/(name+'.json'))
+    return report
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('global_dir',type=Path)
     parser.add_argument('detail_dir',type=Path)
+    parser.add_argument('--record',action='store_true',help='Save a joined report and verify the original DRT measurements')
     args=parser.parse_args()
+    if args.record:
+        result=record_reports(args.global_dir,args.detail_dir)
+        print(json.dumps(result))
+        raise SystemExit(0 if result['passed'] else 1)
     print(json.dumps(verify_routes(args.global_dir,args.detail_dir)))

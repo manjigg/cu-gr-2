@@ -216,7 +216,8 @@ def main():
                             drc=int(drc[-1]) if drc else None, hbt_endpoints=len(pins))
         if args.geometry_tool and proc.returncode==0 and (job/'routed.def').is_file():
             with (job/'geometry.log').open('w') as log:
-                replay=subprocess.run([sys.executable,'-B',tool/'audit.py','--run',output,'--job',side],
+                replay=subprocess.run([sys.executable,'-B',Path(__file__).resolve().with_name('native_geometry.py'),
+                                       tool,output,side],
                                       stdout=log,stderr=subprocess.STDOUT)
             result['geometry']='passed' if replay.returncode==0 else 'failed'
         (job/'detail.json').write_text(json.dumps(result,indent=2)+'\n')

@@ -114,7 +114,9 @@ def detail_record(directory,case,global_dir,earlier):
     stats=load(source) if source.exists() else {}
     metrics=stats.get('metrics') or {}
     row['hbt_count']=metrics.get('used_hbt')
-    path=job/'report.json'
+    path=job/'verified_report.json'
+    if not path.exists():
+        path=job/'report.json'
     report=load(path) if path.exists() else {}
     completed=passed=0
     for side in ('top','bottom'):
