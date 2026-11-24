@@ -2,6 +2,8 @@
 
 开发起点为本地 `2d-baseline` 的 `33773823b543dd4b2a2f6f5a859b2e614b9dc4c2`，开发分支为 `native-3d-f2f`。原版读取、模式布线、拥塞绕行、迷宫、资源提交和 Guide 输出的逐函数审计见 [baseline.md](baseline.md)。实验分支的 C++ 补丁没有参与构建。
 
+二维几何骨架沿用 Chu 和 Wong 的 FLUTE，模式分支与拥塞绕行继承 EDGE 的逻辑 DAG 思想。H3D 在指定树上用两次 DP 处理 HBT 数量及位置，并用 L1 凸性加速合法站点搜索。本实现借用其连续位置区域，在实际离散站点与两侧金属路径上联合评价候选。[FLUTE 论文](https://doi.org/10.1109/TCAD.2007.907068) · [EDGE 论文](https://ieeexplore.ieee.org/abstract/document/10247702) · [H3D 作者论文](https://www.cse.cuhk.edu.hk/~byu/papers/C297-ICCAD2025-3DRoute.pdf)
+
 ## 编译与运行
 
 在仓库根目录执行。项目使用 C++14、Linux/POSIX、原仓库的 LEF/DEF 库和 FLUTE 表。原生模式补充使用已安装的 Boost.Serialization（Boost Software License 1.0）。有限候选主问题的分支定界器在 C++ 内实现，无需安装 MILP 软件。
@@ -40,7 +42,7 @@ python3 scripts/native_check.py tests/native/clusters/manifest.json /tmp/native-
 
 Rsyn::Session 的底层上下文是进程级状态。`Design::importDie` 在主线程依次启动一次性子进程，各自读取一个设计，转换为 CUGR 自有模型，序列化到匿名文件。父进程仅恢复值对象。两个模型各持有自身的局部格线、金属层、宏、实例和引脚。隔离测试分别交换读取顺序并从 DEF 独立计数。`routingBlockages` 补读 DEF BLOCKAGES 的矩形或正交多边形。遇到未支持的层或约束变体会报错。
 
-七例输入转换器在先前实验明确启用 paired_ports 时才解释 T 编号。两侧同名端口、所属网名、每网切分端口唯一性都经过检查，原生 C++ 导入还会验证它们确实是该网的 PORT。其他 PORT 和所有实例端点继续保留。旧 cut_port 的原位置不参与新 HBT 选择。七例的参考阵列来自已保存的 f2f.json，pitch 与中心间距均为 6000 DBU，即 3 µm，原点 (3000,3000)，两端均为 metal7。这个参考栈使用恒等变换，镜像由单独测试覆盖。实验设置与代工厂键合规则的来源应分别记录。
+七例输入转换器在试验协议明确启用 paired_ports 时才解释 T 编号。仓库内的 [benchmark-array.json](../../tests/native/benchmark-array.json) 固定了各设计的 LEF 选择和全部原始 LEF/DEF 的 SHA-256。两侧同名端口、所属网名、每网切分端口唯一性都经过检查，原生 C++ 导入还会验证它们确实是该网的 PORT。其他 PORT 和所有实例端点继续保留。旧 cut_port 的原位置不参与新 HBT 选择。协议复现了原有实验的 6000 DBU 阵列 pitch 和中心间距，即 3 µm，原点 (3000,3000)，两端均为 metal7。这个参考栈使用恒等变换，镜像由单独测试覆盖。实验设置与代工厂键合规则的来源应分别记录。
 
 ## 数据结构与调用
 
@@ -53,6 +55,7 @@ Rsyn::Session 的底层上下文是进程级状态。`Design::importDie` 在主�
 | src/gr/GRTree、GRNet、GridGraph | 层相同推导 Wire，不同推导 Via | GRPoint 比较和四维哈希包含 Die，每个树子节点记录入边类型。原局部遍历遇到 HBT 会报错。二维 XY 哈希只在单颗 Die 的局部投影中使用 |
 | src/native/RoutingGraph.{h,cpp} | 原资源提交按局部树修改 Wire Demand | 统一节点、单位边、物理 siteId、资源标识、可行性、带所有权的事务和撤销。把 Wire Demand 同步至原 GridGraph，供拥塞和 Guide patch 读取 |
 | src/native/PatternSearch.cpp、MedianRegion.cpp、SeedTopology.cpp | 原始 FLUTE + XY 逻辑 DAG + 金属层 DP | 二维投影保留端点列表，Die/层/物理资源集进入树形 DP。另用实际局部布线评价单 HBT 和空间分簇的多 HBT 初解 |
+| src/native/BranchRepair.cpp 的 repairLocalBranches | 局部初解含阻塞边时整棵高扇出树需要重新搜索 | 并查集保留所有可用分支，再在坏边附近从原导体多源搜索，合并后重新检查最小面积与总需求。用含真实阻塞的 DEF 验证补线和 Via |
 | src/gr/PatternRoute.cpp | 原有 constructDetours、constructRoutingDAG、calculateRoutingCosts 和 run | 原生模式在同 Die 候选中调用原 DP 与 detour，保留 FLUTE C 实现和查找表，FLUTE 返回内存按生命周期释放 |
 | src/native/SparseMaze.cpp | 原 MazeRoute 的逻辑稀疏状态是 XY、H/V | 按 Die 独立选轴，在真实层维度扩展合法 Wire/Via/HBT；多端点搜索从已连接树重新出发。回溯的 HBT 两端固定，同层线段交回模式 DP 枚举替代层 |
 | src/gr/GlobalRouter.h、src/native/NativeRouter.cpp | 单 Die 三阶段共享一个 GridGraph | GlobalRouter::route 的原生重载共享同一 MultiDieDesign、RoutingGraph、候选池和所有权账本。各阶段将旧候选纳入新主问题 |
@@ -70,6 +73,7 @@ Rsyn::Session 的底层上下文是进程级状态。`Design::importDie` 在主�
 5. 主问题对每网选择一个候选。目标是所有候选的固定价格之和，硬约束检查共享容量、site 所有权和间距。B&B 的下界是已选成本与各未选网独立最低成本之和。选择候选后事务提交，回退时撤销。可行上界来自已验证整组路由。若每根网已选候选都达到各自最低成本，即得当前候选池的最优性证书。运行超时保留已知可行解及候选池下界。
 6. 候选价格包含物理线长、普通 Via、独立 HBT 和容量稀缺性。可选短路项按实际 Wire/Via 着陆需求、线宽、长度和冻结的 logistic 风险估计面积。固定价格使 master 的上下界独立于搜索顺序。基线 `GridGraph::getWireCost/getViaCost` 的动态拥塞成本仍用于原局部模式与绕行候选生成。原生 master 并未对所有线网联合求一个动态非线性短路面积极小值。
 7. 迷宫按真实优选方向、普通 Via、合法 landing 扩展。启发式使用到剩余目标包围盒的 L1 下界和收缩 Die/层图的剩余代价。HBT 可能跨越不同对齐网格的格中心，因此单位位移价格取所有边允许的下界，层图只保留扣除该位移后的剩余 HBT 价格。整体多终端连接及按单节点存最短回溯链属于候选生成。即使逐步放宽到全密度，也不能据一次失败断言任意三维树均不存在。
+8. 高扇出网用 R-tree（空间索引）对各未连 Pin 查最近的已连格点，再用封装 L1 距离与层间代价选择下一组接入点。每次搜索仍从整棵已连树出发。回溯后如多条合法单边合并产生 Via 金属占用冲突，重新试探另一条分支。局部分支修复的窗口半径依次为 1、2、4、8 格，失败后回到跨 Die 迷宫。窗口与下一终端次序仅用于构造可行上界；有限池分支定界的状态未据此截断。
 
 `routing_statistics.json` 的 stages 含实际候选数量、完成网数、运行时间、有限池的 best_feasible、lower_bound、gap、solver_status。candidate_generation=TIME_LIMIT 说明对应模式域仍有未枚举部分；即使有限池 gap 为 0，扩大候选空间后仍可能改善。全物理空间 gap 独立留空。运行没有全网可行解时，程序以非零状态退出，整网质量指标留空。
 
@@ -91,12 +95,15 @@ Rsyn::Session 的底层上下文是进程级状态。`Design::importDie` 在主�
 | hbt_assignment.tsv | 全局 net ID，物理 site ID，bonded XY，两侧局部 XY、层、分量、固定状态 |
 | routing_statistics.json | 输入库存、阶段证书与质量指标 |
 
-`native_detail.py` 从原始 DEF 在新目录生成 placed.def。确认过的切分端口名称在派生 DEF 中复用到新 landing；额外 HBT 获取新端口，普通端口的位置和实例保持原样。写出前逐项核对原始终端的分区。支持的输入为该 benchmark 使用的 placed DEF 子集。预布线或未支持的网络约束会报错。详细布线采用外部 OpenROAD/TritonRoute。通过 `--geometry-tool` 可调用本机已有的、独立的 OpenDB 几何审计，核对导线、Via、端点分量与跨网短接，再按物理 HBT ID 合并两侧局部分量。下游工具在每颗 Die 上执行 DRC。
+`native_detail.py` 从原始 DEF 在新目录生成 placed.def。确认过的切分端口名称在派生 DEF 中复用到新 landing。额外 HBT 获取新端口，普通端口的位置和实例保持原样。写出前逐项核对原始终端的分区。resolve_instances 将 Rsyn 的实例名和 DEF COMPONENTS 的原始转义拼写一一对应，遇到歧义直接报错。支持的输入为该 benchmark 使用的 placed DEF 子集。预布线或未支持的网络约束会报错。详细布线采用外部 OpenROAD/TritonRoute，在每颗 Die 上执行 DRC。通过 `--geometry-tool` 调用本机已有的独立 OpenDB 几何审计，核对导线、Via、端点分量与跨网短接。native_joint.py 核对审计记录的 routed.def 哈希，并将 terminal_components.jsonl.gz 中实测的导体分量按具体 HBT 的两个 landing 端口联结，检查每条全局网内连通与网间隔离。
+
+另有两个全局路由回放器。native_check.py 从原始 LEF/DEF 的格线、优选方向、实例 Pin 和 PORT 独立核对输出树。native_replay 用新建的 C++ 资源图读边表，正序提交所有网，复算容量、各侧整数 DBU 线长与普通 Via，最后逆序释放所有网并检查账本为空。native_summary.py 同时读取 C++ 回放、原始路由 JSON 和进程记录，拒绝指标不一致的结果。
 
 ```bash
-python3 scripts/native_bench.py /tmp/native-cugr-check/route results-3/pareto-f2f-pareto-v1 /tmp/native-seven-demo --jobs 2 --seed-seconds 1200 --stage-seconds 15
+python3 scripts/native_bench.py /tmp/native-cugr-check/route tests/native/benchmark-array.json /tmp/native-seven-demo --jobs 2 --seed-seconds 1200 --stage-seconds 15
 python3 scripts/native_detail.py /home/wanghh/h3d/OpenROAD/bazel-bin/openroad tests/native/clusters/manifest.json /tmp/native-clusters-demo /tmp/native-clusters-detail --geometry-tool /home/wanghh/h3d/OpenROAD/h3d_drt_validation/run_002 --parallel-dies
 python3 scripts/native_detail_batch.py /home/wanghh/h3d/OpenROAD/bazel-bin/openroad /tmp/native-seven-demo /tmp/native-seven-detail /home/wanghh/h3d/OpenROAD/h3d_drt_validation/run_002 --jobs 3
+python3 scripts/native_summary.py /tmp/native-seven-demo --replay /tmp/native-cugr-check/native_replay --detail-dir /tmp/native-seven-detail
 python3 scripts/native_sweep.py /tmp/native-cugr-check/route /tmp/native-seven-demo/aes/manifest.json /tmp/native-aes-weights --jobs 2
 ```
 

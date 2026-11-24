@@ -134,7 +134,30 @@ def record_reports(global_dir,detail):
         path=detail/(name+'.tmp')
         path.write_text(json.dumps(record,indent=2)+'\n')
         path.replace(detail/(name+'.json'))
+    # 保存首次失败的原报告，再把同一份 routed.def 的独立复查发布为当前结果。
+    if report['passed'] and (detail/'report.json').exists():
+        for side in ('top','bottom'):
+            src=detail/side/'detail.json'
+            if report[side]['geometry_evidence']!=side and json.loads(src.read_text())['geometry']!='passed':
+                publish_recheck(src,report[side])
+        src=detail/'report.json'
+        if not json.loads(src.read_text())['passed']:
+            publish_recheck(src,report)
     return report
+
+
+def publish_recheck(path,record):
+    first=path.with_suffix('.first.json')
+    original=path.read_bytes()
+    if first.exists():
+        if first.read_bytes()!=original:
+            raise ValueError('A different initial audit already exists at '+str(first))
+    else:
+        with first.open('xb') as copy:
+            copy.write(original)
+    temp=path.with_suffix('.rechecked.tmp')
+    temp.write_text(json.dumps(record,indent=2)+'\n')
+    temp.replace(path)
 
 
 if __name__=='__main__':

@@ -47,6 +47,17 @@ int main(int argc,char** argv) {
     graph.release(1);
     graph.release(0);
     if(!graph.demand().empty()) return 1;
+    // 两网各自的最便宜候选争用同一个物理站，第二网只能用该站。
+    // 第一网需选择另一站的高层 landing，并真实增加两侧 Via。
+    const auto cheap=graph.sites.at(0).transitions.at(0);
+    const auto upper=graph.sites.at(1).transitions.at(1);
+    Route direct{cheap.a,{cheap}};
+    Route lifted{cheap.a,{upper,Edge(cheap.a,upper.a,GREdgeType::VIA),Edge(cheap.b,upper.b,GREdgeType::VIA)}};
+    graph.validate(0,lifted);
+    std::vector<Routes> compete{{direct,lifted},{direct}};
+    const auto constrained=selectRoutes(graph,compete,time);
+    if(constrained.status!="OPTIMAL" || constrained.selection!=std::vector<unsigned>{1,0} ||
+       constrained.objective!=10 || constrained.lower!=10 || !graph.demand().empty()) return 1;
     for(auto& candidates:pool)
         candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[](const Route& r) {
             for(const auto& e:r.edges) if(e.type==GREdgeType::HBT && e.site!=0) return true;
