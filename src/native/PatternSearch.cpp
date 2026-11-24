@@ -1,4 +1,5 @@
 #include "PatternSearch.h"
+#include "BranchRepair.h"
 #include "gr/PatternRoute.h"
 #include <numeric>
 
@@ -98,8 +99,9 @@ Routes PatternSearch::localSeed(const std::vector<std::vector<GRPoint>>& pins) c
         if(adj[q].size()==1) leaves.push_back(q);
     }
     r.root=*terminals.begin();
-    if(g.available(net,r.edges)) return {std::move(r)};
-    if(pins.size()!=2) return {};
+    if(g.available(net,r.edges) && r.edges.size()+1==std::count_if(adj.begin(),adj.end(),
+       [&](const decltype(adj)::value_type& v){return !v.second.empty() || v.first==r.root;})) return {std::move(r)};
+    if(pins.size()!=2) return repairLocalBranches(g,net,r,terminals,time);
     Routes alternative;
     double best=std::numeric_limits<double>::infinity();
     for(auto a:pins[0]) for(auto b:pins[1]) for(const auto& edges:localPaths(a,b)) {

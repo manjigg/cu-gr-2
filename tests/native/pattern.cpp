@@ -1,12 +1,34 @@
 #include "native/SparseMaze.h"
+#include "native/BranchRepair.h"
 #include "gr/PatternRoute.h"
 using namespace native3d;
 int main(int argc,char** argv) {
-    if(argc!=2) return 2;
+    if(argc!=2 && argc!=3) return 2;
     Parameters p(argc,argv);
     MultiDieDesign model(p,argv[1]);
     RoutingGraph graph(model);
     Deadline time(45);
+    if(argc==3) {
+        if(std::string(argv[2])!="--branch-test") return 2;
+        GRPoint a(0,2,0,0),b(0,2,1,0);
+        Route blocked{a,{Edge(a,b,GREdgeType::WIRE)}};
+        if(graph.available(0,blocked.edges)) return 1;
+        const auto repaired=repairLocalBranches(graph,0,blocked,{a,b},time);
+        if(repaired.empty() || !graph.available(0,repaired.front().edges)) return 1;
+        int vias=0,wires=0;
+        std::map<GRPoint,std::vector<GRPoint>> adj;
+        for(const auto& e:repaired.front().edges) {
+            vias+=e.type==GREdgeType::VIA; wires+=e.type==GREdgeType::WIRE;
+            adj[e.a].push_back(e.b);adj[e.b].push_back(e.a);
+        }
+        std::set<GRPoint> seen{a};std::vector<GRPoint> todo{a};
+        while(!todo.empty()) {
+            auto p=todo.back();todo.pop_back();
+            for(auto q:adj[p]) if(seen.insert(q).second) todo.push_back(q);
+        }
+        if(!seen.count(b) || vias<2 || wires<1 || seen.size()!=repaired.front().edges.size()+1) return 1;
+        return 0;
+    }
     PatternRoute::readFluteLUT();
     std::vector<Routes> pool;
     for(int n=0;n<int(model.nets.size());++n) pool.push_back(PatternSearch(graph,n,time).enumerate(false));

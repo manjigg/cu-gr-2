@@ -60,8 +60,13 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
         try {
             for(int n:order) {
                 seedTime.check();++attempted;
+                const auto started=Clock::now();
                 auto r=initialCandidates(graph,n,seedTime);
                 if(r.empty()) r=SparseMaze(graph,n,seedTime).seed(stride,false);
+                const double elapsed=std::chrono::duration<double>(Clock::now()-started).count();
+                if(elapsed>=1. || r.empty())
+                    std::cout<<"NATIVE_SEED_NET "<<n<<" pins="<<graph.terminals(n).size()
+                             <<" seconds="<<elapsed<<" candidates="<<r.size()<<std::endl;
                 if(r.empty()) continue;
                 graph.commit(n,r.front());committed.push_back(n);pool[n]=std::move(r);
             }
