@@ -1,5 +1,6 @@
 #pragma once
 #include "MultiDieDesign.h"
+#include <unordered_map>
 
 namespace native3d {
 struct Edge {
@@ -10,8 +11,13 @@ struct Edge {
     bool operator<(const Edge& e) const { return std::tie(a,b,type,site)<std::tie(e.a,e.b,e.type,e.site); }
 };
 using Edges=std::set<Edge>;
-using Resource=std::tuple<GREdgeType,int,int,int,int>;
+using Resource=uint64_t;
 using Demand=std::map<Resource,double>;
+using Occupancy=std::unordered_map<Resource,double>;
+struct ResourceLocation {
+    GREdgeType type;
+    int die,layer,x,y;
+};
 struct Site {
     int id,capacity,owner;
     XY bonded;
@@ -22,6 +28,26 @@ struct Route {
     GRPoint root;
     Edges edges;
 };
+class RoutingGraph;
+class RouteResourceSummary {
+public:
+    double cost() const {return baseCost;}
+    double wirelength() const {return wireUm;}
+    size_t vias() const {return viaCount;}
+    const std::vector<int>& hbtSites() const {return sites;}
+    const std::vector<std::pair<Resource,double>>& resources() const {return demand;}
+private:
+    friend class RoutingGraph;
+    RouteResourceSummary(const RoutingGraph* source,int id):graph(source),net(id) {}
+    const RoutingGraph* graph;
+    int net;
+    double baseCost=0,wireUm=0;
+    size_t viaCount=0;
+    std::vector<int> sites;
+    std::vector<std::pair<Resource,double>> demand;
+};
+using PreparedRoute=std::shared_ptr<const RouteResourceSummary>;
+
 class RoutingGraph {
 public:
     explicit RoutingGraph(const MultiDieDesign&);
@@ -38,10 +64,16 @@ public:
     double stepCost(int net,const Edge&) const;
     double wireUm(const Edge& edge) const;
     Demand resources(const Edges& edges) const;
-    double capacity(const Resource& id) const;
+    double capacity(Resource id) const;
+    ResourceLocation location(Resource id) const;
+    Resource resourceId(const Edge& edge) const;
+    PreparedRoute prepareRoute(int net,const Route& route) const;
+    bool available(const RouteResourceSummary& prepared) const;
+    void commitPrepared(int net,const PreparedRoute& prepared);
+    bool replacePrepared(int net,const PreparedRoute& prepared);
     void commit(int net,const Route& route);
     void release(int net);
-    const Demand& demand() const {return used;}
+    const Occupancy& demand() const {return used;}
     const std::vector<std::vector<GRPoint>>& terminals(int net) const {return access.at(net);}
     const std::array<GridGraphView<bool>,2>& congestion() const { return congestionView; }
     void captureCongestion();
@@ -53,6 +85,10 @@ public:
     double minimumCostPerBondDbu() const {return distancePrice;}
     const std::set<int>& landingLines(int die,int axis) const {return siteLines[die][axis];}
 private:
+    struct Footprint {
+        double demand;
+        bool low,high;
+    };
     std::map<GRPoint,std::vector<Edge>> landings;
     RTree siteIndex;
     std::set<int> siteLines[2][2];
@@ -62,12 +98,27 @@ private:
     std::vector<std::vector<double>> layerLower;
     std::vector<std::vector<std::vector<GRPoint>>> access;
     std::array<GridGraphView<bool>,2> congestionView;
-    void publishDemand(const Demand& changed);
-    Demand used;
-    std::map<int,Demand> owned;
+    void publishDemand(const RouteResourceSummary& changed);
+    Occupancy used;
+    std::vector<PreparedRoute> owned;
+    std::array<Resource,2> offsets{};
+    Resource volume;
+    std::array<std::vector<std::vector<unsigned>>,2> trackCounts;
+    std::array<std::vector<std::vector<Footprint>>,2> footprints;
+    std::array<std::vector<bool>,2> layerPairs;
+    std::vector<double> staticCapacity;
+    bool cacheStatic;
     int viaCapacity[2];
     double spacing,wireWeight,viaWeight,hbtWeight,congestionWeight,hbtPressureWeight,shortAreaWeight;
     bool allowed(int net,const Edge& e) const;
-    double resourcePrice(const Resource&,double cap,double demand) const;
+    Resource pointId(GRPoint p) const;
+    Resource siteId(int id) const {return 2*volume+static_cast<unsigned>(id);}
+    Footprint landingFootprint(GRPoint p) const;
+    unsigned countTracks(int die,int layer,int position) const;
+    bool collectHbtSites(int net,const Edges& edges,std::vector<int>& out) const;
+    bool availableSites(const std::vector<int>& sites,const std::vector<int>* released=nullptr) const;
+    double resourcePrice(Resource,double cap,double demand) const;
+    double baseCost(const Edges& edges,const Demand& demand) const;
+    void validateConnectivity(int net,const Route& route) const;
 };
 }

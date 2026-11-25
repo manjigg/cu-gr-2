@@ -74,9 +74,9 @@ Json replay(const MultiDieDesign& model,std::istream& input) {
     uint64_t occupied=0,viaBad=0,hbtBad=0;
     for(const auto& item:graph.demand()) {
         double excess=std::max(0.,item.second-graph.capacity(item.first));
-        auto type=std::get<0>(item.first);
+        auto type=graph.location(item.first).type;
         if(type==GREdgeType::WIRE) {
-            int d=std::get<1>(item.first);
+            int d=graph.location(item.first).die;
             over[d]+=excess;
             peak[d]=std::max(peak[d],excess);
         } else if(type==GREdgeType::VIA) viaBad+=excess>1e-12;

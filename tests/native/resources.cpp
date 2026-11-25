@@ -17,12 +17,17 @@ int main(int argc,char** argv) {
     Parameters params(argc,argv);
     MultiDieDesign model(params,argv[1]);
     RoutingGraph graph(model);
+    model.config["enable_resource_cache"]=false;
+    RoutingGraph uncached(model);
     for(int d:{0,1}) {
         const auto& grid=model.dies[d]->grid;
         for(int l=0;l<int(grid.getNumLayers());++l) for(int x=0;x<int(grid.getSize(0));++x)
             for(int y=0;y<int(grid.getSize(1));++y) for(const auto& e:graph.neighbors({d,l,x,y},0)) {
                 double price=graph.stepCost(0,e);
                 check(std::isfinite(price)==graph.available(0,{e}));
+                check(graph.resources({e})==uncached.resources({e}));
+                for(const auto& r:graph.resources({e})) check(graph.capacity(r.first)==uncached.capacity(r.first));
+                check(price==uncached.stepCost(0,e));
                 if(std::isfinite(price)) check(std::abs(price-graph.cost({e}))<1e-9);
             }
     }
@@ -40,6 +45,19 @@ int main(int argc,char** argv) {
     rejects([&]{graph.release(1);});
     check(before==graph.demand());
     graph.commit(1,b); graph.release(1); graph.release(0);
+    check(graph.demand().empty());
+    auto old=graph.prepareRoute(0,a),alternative=graph.prepareRoute(0,b);
+    check(old->hbtSites().size()==1 && old->wirelength()==0 && old->vias()==0);
+    graph.commitPrepared(0,old);
+    graph.commit(1,b);
+    before=graph.demand();
+    check(!graph.replacePrepared(0,alternative));
+    check(before==graph.demand());
+    graph.release(1);
+    check(graph.replacePrepared(0,alternative));
+    check(graph.demand().count(graph.resourceId(edge))==0);
+    check(graph.demand().count(graph.resourceId(extra))==1);
+    graph.release(0);
     check(graph.demand().empty());
     Route stack=a;
     stack.edges.emplace(edge.a,GRPoint(0,2,edge.a.x,edge.a.y),GREdgeType::VIA);

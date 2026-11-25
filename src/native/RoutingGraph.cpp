@@ -1,12 +1,9 @@
 #include "RoutingGraph.h"
 #include "Profile.h"
 #include <cmath>
+#include <unordered_set>
 
 namespace native3d {
-static Resource key(const Edge& e) {
-    if (e.type==GREdgeType::HBT) return {e.type,-1,-1,e.site,-1};
-    return {e.type,e.a.dieIdx,e.a.layerIdx,e.a.x,e.a.y};
-}
 static double weight(const Json& j,const char* field) {
     double w=j.at(field).get<double>();
     if (!std::isfinite(w)||w<0) throw std::invalid_argument(field);
@@ -50,6 +47,47 @@ RoutingGraph::RoutingGraph(const MultiDieDesign& m):model(m) {
             if(viaCapacity[d]<0) throw std::invalid_argument("Via capacity must be nonnegative");
         }
     }
+    cacheStatic=j.value("enable_resource_cache",true);
+    volume=0;
+    for(int d:{0,1}) {
+        const auto& die=*m.dies[d];
+        const auto& grid=die.grid;
+        offsets[d]=volume;
+        auto plane=Resource(grid.getSize(0))*grid.getSize(1);
+        const auto layers=grid.getNumLayers();
+        const auto maximum=(std::numeric_limits<Resource>::max()-INT_MAX)/2;
+        if(!plane || !layers || plane>(maximum-volume)/layers)
+            throw std::overflow_error("Routing resource ID overflow");
+        volume+=plane*layers;
+        if(!cacheStatic) continue;
+        trackCounts[d].resize(layers);
+        footprints[d].resize(layers);
+        layerPairs[d].resize(layers);
+        for(unsigned l=0;l<layers;++l) {
+            layerPairs[d][l]=die.design->viaTypes().count({l,l+1});
+            const auto axis=grid.getLayerDirection(l);
+            if(viaCapacity[d]<0) for(unsigned pos=0;pos<grid.getSize(1-axis);++pos)
+                trackCounts[d][l].push_back(countTracks(d,l,pos));
+            auto& values=footprints[d][l];
+            values.reserve(grid.getSize(axis));
+            for(unsigned pos=0;pos<grid.getSize(axis);++pos) {
+                GRPoint point(d,l,0,0);
+                point[axis]=pos;
+                values.push_back(landingFootprint(point));
+            }
+        }
+    }
+    // 上限约 40 MiB。更大的网格继续使用逐轴轨道缓存，避免按整个空间分配。
+    if(cacheStatic && volume<=2500000) {
+        std::vector<double> values(2*volume);
+        for(Resource id=0;id<2*volume;++id) {
+            const auto loc=location(id);
+            if(loc.type==GREdgeType::VIA && !layerPairs[loc.die][loc.layer]) continue;
+            values[id]=capacity(id);
+        }
+        staticCapacity.swap(values);
+    }
+    owned.resize(m.nets.size());
     std::set<XY> positions;
     std::vector<std::pair<XY,XY>> keepouts;
     for(const auto& box:b.at("keepouts")) {
@@ -147,7 +185,8 @@ bool RoutingGraph::allowed(int net,const Edge& e) const {
     if(e.site!=-1 || e.a.dieIdx!=e.b.dieIdx) return false;
     const auto& die=*model.dies[e.a.dieIdx];
     if(e.type==GREdgeType::VIA) return e.a.x==e.b.x && e.a.y==e.b.y &&
-        e.b.layerIdx==e.a.layerIdx+1 && die.design->viaTypes().count({e.a.layerIdx,e.b.layerIdx});
+        e.b.layerIdx==e.a.layerIdx+1 &&
+        (cacheStatic?layerPairs[e.a.dieIdx][e.a.layerIdx]:die.design->viaTypes().count({e.a.layerIdx,e.b.layerIdx}));
     auto dir=die.grid.getLayerDirection(e.a.layerIdx);
     return e.a.layerIdx==e.b.layerIdx && e.a.layerIdx>=1 && e.a[dir]+1==e.b[dir] &&
         e.a[1-dir]==e.b[1-dir];
@@ -185,93 +224,152 @@ double RoutingGraph::wireUm(const Edge& e) const {
     auto dir=g.getLayerDirection(e.a.layerIdx);
     return double(g.getEdgeLength(dir,e.a[dir]))/g.getLibDBU();
 }
+Resource RoutingGraph::pointId(GRPoint p) const {
+    const auto& grid=model.dies[p.dieIdx]->grid;
+    return offsets[p.dieIdx]+(Resource(p.layerIdx)*grid.getSize(0)+p.x)*grid.getSize(1)+p.y;
+}
+Resource RoutingGraph::resourceId(const Edge& edge) const {
+    if(edge.type==GREdgeType::HBT) return siteId(edge.site);
+    return pointId(edge.a)+(edge.type==GREdgeType::VIA?volume:0);
+}
+ResourceLocation RoutingGraph::location(Resource id) const {
+    if(id>=2*volume) return {GREdgeType::HBT,-1,-1,int(id-2*volume),-1};
+    const auto type=id>=volume?GREdgeType::VIA:GREdgeType::WIRE;
+    if(type==GREdgeType::VIA) id-=volume;
+    const int d=id>=offsets[1];
+    id-=offsets[d];
+    const auto& grid=model.dies[d]->grid;
+    const int y=id%grid.getSize(1);
+    id/=grid.getSize(1);
+    return {type,d,int(id/grid.getSize(0)),int(id%grid.getSize(0)),y};
+}
+RoutingGraph::Footprint RoutingGraph::landingFootprint(GRPoint p) const {
+    const auto& die=*model.dies[p.dieIdx];
+    const auto dir=die.grid.getLayerDirection(p.layerIdx);
+    const auto& cached=footprints[p.dieIdx];
+    if(!cached.empty() && p[dir]<int(cached[p.layerIdx].size())) return cached[p.layerIdx][p[dir]];
+    const int lo=p[dir]>0?die.grid.getEdgeLength(dir,p[dir]-1):0;
+    const int hi=p[dir]+1<int(die.grid.getSize(dir))?die.grid.getEdgeLength(dir,p[dir]):0;
+    if(lo+hi==0) return {0.,false,false};
+    return {model.parameters.via_multiplier*die.design->getLayer(p.layerIdx).getMinLength()/(lo+hi),lo>0,hi>0};
+}
 Demand RoutingGraph::resources(const Edges& edges) const {
     Measured measured(Timing::Resources);
     Demand res;
-    for(const auto& e:edges) {
-        res[key(e)]=res[key(e)]+1;
-        if(e.type!=GREdgeType::VIA) continue;
-        const auto& die=*model.dies[e.a.dieIdx];
-        for(auto p:{e.a,e.b}) {
-            auto dir=die.grid.getLayerDirection(p.layerIdx);
-            int idx=p[dir], size=die.grid.getSize(dir);
-            int lo=idx>0?die.grid.getEdgeLength(dir,idx-1):0;
-            int hi=idx+1<size?die.grid.getEdgeLength(dir,idx):0;
-            if(lo+hi==0) throw std::invalid_argument("Via has no adjacent landing segment");
-            double footprint=2.0*die.design->getLayer(p.layerIdx).getMinLength()/(lo+hi);
-            for(int delta:{-1,1}) if((delta<0?lo:hi) && footprint>0) {
-                GRPoint q=p; q[dir]+=delta;
-                res[key(Edge(p,q,GREdgeType::WIRE))]+=footprint;
+    for(const auto& edge:edges) {
+        res[resourceId(edge)]+=1;
+        if(edge.type!=GREdgeType::VIA) continue;
+        for(auto p:{edge.a,edge.b}) {
+            const auto footprint=landingFootprint(p);
+            if(!footprint.high && !footprint.low)
+                throw std::invalid_argument("Via has no adjacent landing segment");
+            if(footprint.demand<=0) continue;
+            if(footprint.high) res[pointId(p)]+=footprint.demand;
+            if(footprint.low) {
+                --p[model.dies[p.dieIdx]->grid.getLayerDirection(p.layerIdx)];
+                res[pointId(p)]+=footprint.demand;
             }
         }
     }
     return res;
 }
-double RoutingGraph::capacity(const Resource& id) const {
+unsigned RoutingGraph::countTracks(int d,int l,int pos) const {
+    const auto& die=*model.dies[d];
+    const auto& layer=die.design->getLayer(l);
+    const int axis=1-layer.getDirection();
+    auto interval=utils::IntervalT<DBU>(die.grid.getGridline(axis,pos),die.grid.getGridline(axis,pos+1));
+    if(pos+1<int(die.grid.getSize(axis))) --interval.high;
+    auto tracks=layer.rangeSearchTracks(interval);
+    return tracks.IsValid()?tracks.range()+1:0;
+}
+double RoutingGraph::capacity(Resource id) const {
     Measured measured(Timing::Capacity);
-    auto d=std::get<1>(id), l=std::get<2>(id), x=std::get<3>(id), y=std::get<4>(id);
-    switch(std::get<0>(id)) {
-    case GREdgeType::HBT: return sites.at(x).capacity;
-    case GREdgeType::VIA: {
-        if(viaCapacity[d]>=0) return viaCapacity[d];
-        // 全局 Via 容量代理：二层真实优选轨道在本 GCell 内的交点数。
-        // 单独的金属着陆需求继续受障碍后的导线容量约束。
-        const auto& die=*model.dies[d];
-        const auto box=die.grid.getCellBox({x,y});
-        double count=1;
-        if(die.grid.getLayerDirection(l)==die.grid.getLayerDirection(l+1))
-            throw std::invalid_argument("Parallel layers require explicit via capacity");
-        for(int idx:{l,l+1}) {
-            const auto& layer=die.design->getLayer(idx);
-            int axis=1-layer.getDirection();
-            auto interval=box[axis];
-            if((axis==0?x:y)+1<int(die.grid.getSize(axis))) --interval.high;
-            auto tracks=layer.rangeSearchTracks(interval);
-            count*=tracks.IsValid()?tracks.range()+1:0;
+    if(id<staticCapacity.size()) return staticCapacity[id];
+    const auto loc=location(id);
+    if(loc.type==GREdgeType::HBT) return sites.at(loc.x).capacity;
+    const int d=loc.die,l=loc.layer;
+    const auto& grid=model.dies[d]->grid;
+    if(loc.type==GREdgeType::WIRE) return grid.getEdge(l,loc.x,loc.y).capacity;
+    if(viaCapacity[d]>=0) return viaCapacity[d];
+    if(grid.getLayerDirection(l)==grid.getLayerDirection(l+1))
+        throw std::invalid_argument("Parallel layers require explicit via capacity");
+    double count=1;
+    for(int idx:{l,l+1}) {
+        const int pos=grid.getLayerDirection(idx)==0?loc.y:loc.x;
+        count*=cacheStatic?trackCounts[d][idx][pos]:countTracks(d,idx,pos);
+    }
+    return count;
+}
+bool RoutingGraph::collectHbtSites(int net,const Edges& edges,std::vector<int>& chosen) const {
+    for(const auto& edge:edges) {
+        if(!allowed(net,edge)) return false;
+        if(edge.type==GREdgeType::HBT) chosen.push_back(edge.site);
+    }
+    std::sort(chosen.begin(),chosen.end());
+    return std::adjacent_find(chosen.begin(),chosen.end())==chosen.end();
+}
+bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vector<int>* released) const {
+    auto alreadyUsed=[&](int id) {
+        return used.count(siteId(id)) && !(released && std::binary_search(released->begin(),released->end(),id));
+    };
+    for(int id:chosen) {
+        if(alreadyUsed(id)) return false;
+        if(spacing<=0) continue;
+        const auto a=sites.at(id).bonded;
+        auto bounded=[](double x) {return static_cast<DBU>(std::max<double>(INT_MIN,std::min<double>(INT_MAX,x)));};
+        const boostBox area(boostPoint(bounded(a[0]-spacing),bounded(a[1]-spacing)),
+                            boostPoint(bounded(a[0]+spacing),bounded(a[1]+spacing)));
+        for(auto site=siteIndex.qbegin(bgi::intersects(area));site!=siteIndex.qend();++site) {
+            const int other=site->second;
+            if(other==id) continue;
+            const auto& item=sites.at(other);
+            if(!std::binary_search(chosen.begin(),chosen.end(),other) && !alreadyUsed(other) && item.owner<0) continue;
+            const auto b=item.bonded;
+            if(std::hypot(double(a[0]-b[0]),double(a[1]-b[1]))<spacing) return false;
         }
-        return count;
     }
-    default: return model.dies.at(d)->grid.getEdge(l,x,y).capacity;
-    }
+    return true;
 }
 bool RoutingGraph::available(int net,const Edges& edges) const {
     Measured measured(Timing::Available);
-    std::set<int> chosen;
-    for(const auto& e:edges) {
-        if(!allowed(net,e)) return false;
-        if(e.type!=GREdgeType::HBT) continue;
-        if(!chosen.insert(e.site).second || used.count(key(e))) return false;
-    }
-    if(spacing>0) for(int id:chosen) for(const auto& item:sites) {
-        if(item.first==id) continue;
-        Resource other{GREdgeType::HBT,-1,-1,item.first,-1};
-        if(!chosen.count(item.first) && !used.count(other) && item.second.owner<0) continue;
-        auto a=sites.at(id).bonded,b=item.second.bonded;
-        if(std::hypot(double(a[0]-b[0]),double(a[1]-b[1]))<spacing) return false;
-    }
+    std::vector<int> chosen;
+    if(!collectHbtSites(net,edges,chosen) || !availableSites(chosen)) return false;
     for(const auto& r:resources(edges)) {
         auto it=used.find(r.first);
         if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
     }
     return true;
 }
-double RoutingGraph::cost(const Edges& edges) const {
-    Measured measured(Timing::Cost);
+bool RoutingGraph::available(const RouteResourceSummary& prepared) const {
+    Measured measured(Timing::Available);
+    if(prepared.graph!=this) throw std::invalid_argument("Route summary belongs to another resource graph");
+    if(!availableSites(prepared.sites)) return false;
+    for(const auto& r:prepared.demand) {
+        auto it=used.find(r.first);
+        if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
+    }
+    return true;
+}
+double RoutingGraph::baseCost(const Edges& edges,const Demand& demand) const {
     double value=0;
-    for(const auto& e:edges)
-        value+=e.type==GREdgeType::WIRE?wireWeight*wireUm(e):e.type==GREdgeType::VIA?viaWeight:hbtWeight;
-    for(const auto& r:resources(edges)) value+=resourcePrice(r.first,capacity(r.first),r.second);
+    for(const auto& edge:edges)
+        value+=edge.type==GREdgeType::WIRE?wireWeight*wireUm(edge):edge.type==GREdgeType::VIA?viaWeight:hbtWeight;
+    for(const auto& r:demand) value+=resourcePrice(r.first,capacity(r.first),r.second);
     return value;
 }
-double RoutingGraph::resourcePrice(const Resource& id,double cap,double demand) const {
-    auto type=std::get<0>(id);
-    double value=(type==GREdgeType::HBT?hbtPressureWeight:congestionWeight)*demand/(1+cap);
-    if(shortAreaWeight>0 && type==GREdgeType::WIRE) {
-        int d=std::get<1>(id),l=std::get<2>(id);
-        const auto& die=*model.dies[d];
-        int axis=die.grid.getLayerDirection(l);
-        double um=double(die.grid.getEdgeLength(axis,axis==0?std::get<3>(id):std::get<4>(id)))/die.grid.getLibDBU();
-        double width=double(die.design->getLayer(l).getWidth())/die.grid.getLibDBU();
+double RoutingGraph::cost(const Edges& edges) const {
+    Measured measured(Timing::Cost);
+    return baseCost(edges,resources(edges));
+}
+double RoutingGraph::resourcePrice(Resource id,double cap,double demand) const {
+    const bool hbt=id>=2*volume;
+    double value=(hbt?hbtPressureWeight:congestionWeight)*demand/(1+cap);
+    if(shortAreaWeight>0 && id<volume) {
+        const auto loc=location(id);
+        const auto& die=*model.dies[loc.die];
+        int axis=die.grid.getLayerDirection(loc.layer);
+        double um=double(die.grid.getEdgeLength(axis,axis==0?loc.x:loc.y))/die.grid.getLibDBU();
+        double width=double(die.design->getLayer(loc.layer).getWidth())/die.grid.getLibDBU();
         double probability=cap<1?1.:1./(1.+std::exp(cap*model.parameters.cost_logistic_slope));
         value+=shortAreaWeight*um*width*demand*probability;
     }
@@ -285,86 +383,158 @@ double RoutingGraph::stepCost(int net,const Edge& edge) const {
     auto bounds=[&](GRPoint p,double demand) {
         const auto r=die.grid.getEdge(p.layerIdx,p.x,p.y);
         if(r.getResource()+1e-12<demand) return inf;
-        return resourcePrice({GREdgeType::WIRE,p.dieIdx,p.layerIdx,p.x,p.y},r.capacity,demand);
+        return resourcePrice(pointId(p),r.capacity,demand);
     };
     if(edge.type==GREdgeType::WIRE) return wireWeight*wireUm(edge)+bounds(edge.a,1);
-    auto id=key(edge);
+    auto id=resourceId(edge);
     double cap=capacity(id);
     auto it=used.find(id);
     if((it==used.end()?0:it->second)+1>cap+1e-12) return inf;
     double total=viaWeight+resourcePrice(id,cap,1);
     for(auto p:{edge.a,edge.b}) {
-        int axis=die.grid.getLayerDirection(p.layerIdx);
-        int low=p[axis]?die.grid.getEdgeLength(axis,p[axis]-1):0;
-        int high=p[axis]+1<int(die.grid.getSize(axis))?die.grid.getEdgeLength(axis,p[axis]):0;
-        if(low+high==0) return inf;
-        double demand=die.design->getLayer(p.layerIdx).getMinLength()*model.parameters.via_multiplier/(low+high);
-        if(demand==0) continue;
-        if(high) total+=bounds(p,demand);
-        if(low) {--p[axis];total+=bounds(p,demand);}
+        const auto footprint=landingFootprint(p);
+        if(!footprint.low && !footprint.high) return inf;
+        if(footprint.demand<=0) continue;
+        if(footprint.high) total+=bounds(p,footprint.demand);
+        if(footprint.low) {--p[die.grid.getLayerDirection(p.layerIdx)];total+=bounds(p,footprint.demand);}
     }
     return total;
 }
-void RoutingGraph::validate(int net,const Route& route) const {
-    Measured measured(Timing::Validate);
-    if(!validPoint(route.root)||!available(net,route.edges)) throw std::invalid_argument("Infeasible route resources");
-    std::map<GRPoint,std::vector<GRPoint>> adj;
-    for(const auto& e:route.edges){adj[e.a].push_back(e.b);adj[e.b].push_back(e.a);}
-    std::set<GRPoint> seen{route.root};
-    std::vector<GRPoint> todo{route.root};
-    while(!todo.empty()) {
-        auto p=todo.back(); todo.pop_back();
-        for(auto q:adj[p]) if(seen.insert(q).second) todo.push_back(q);
+void RoutingGraph::validateConnectivity(int net,const Route& route) const {
+    std::unordered_map<Resource,std::vector<Resource>> adj;
+    const auto root=pointId(route.root);
+    adj[root];
+    for(const auto& e:route.edges) {
+        auto a=pointId(e.a),b=pointId(e.b);
+        adj[a].push_back(b);adj[b].push_back(a);
     }
-    if(seen.size()!=adj.size() || route.edges.size()+1!=seen.size()) throw std::invalid_argument("Disconnected or cyclic tree");
+    if(route.edges.size()+1!=adj.size()) throw std::invalid_argument("Disconnected or cyclic tree");
+    std::unordered_set<Resource> seen{root};
+    std::vector<Resource> todo{root};
+    while(!todo.empty()) {
+        auto p=todo.back();todo.pop_back();
+        for(auto q:adj.at(p)) if(seen.insert(q).second) todo.push_back(q);
+    }
+    if(seen.size()!=adj.size()) throw std::invalid_argument("Disconnected or cyclic tree");
     for(const auto& pin:terminals(net))
-        if(std::none_of(pin.begin(),pin.end(),[&](GRPoint p){return seen.count(p);})) throw std::invalid_argument("Detached terminal");
+        if(std::none_of(pin.begin(),pin.end(),[&](GRPoint p){return seen.count(pointId(p));}))
+            throw std::invalid_argument("Detached terminal");
     auto fixed=fixedByNet.find(net);
     if(fixed!=fixedByNet.end()) for(int id:fixed->second)
         if(std::none_of(route.edges.begin(),route.edges.end(),[&](const Edge& e){return e.type==GREdgeType::HBT && e.site==id;}))
             throw std::invalid_argument("Fixed site missing");
 }
+PreparedRoute RoutingGraph::prepareRoute(int net,const Route& route) const {
+    Measured measured(Timing::Validate);
+    std::shared_ptr<RouteResourceSummary> summary(new RouteResourceSummary(this,net));
+    if(!validPoint(route.root) || !collectHbtSites(net,route.edges,summary->sites))
+        throw std::invalid_argument("Infeasible route resources");
+    validateConnectivity(net,route);
+    const auto demand=resources(route.edges);
+    summary->demand.assign(demand.begin(),demand.end());
+    summary->baseCost=baseCost(route.edges,demand);
+    for(const auto& edge:route.edges) {
+        if(edge.type==GREdgeType::VIA) ++summary->viaCount;
+        if(edge.type==GREdgeType::WIRE) summary->wireUm+=wireUm(edge);
+    }
+    return summary;
+}
+void RoutingGraph::validate(int net,const Route& route) const {
+    Measured measured(Timing::Validate);
+    if(!validPoint(route.root)||!available(net,route.edges)) throw std::invalid_argument("Infeasible route resources");
+    validateConnectivity(net,route);
+}
 void RoutingGraph::commit(int net,const Route& route) {
+    if(owned.at(net)) throw std::logic_error("Double commit");
+    commitPrepared(net,prepareRoute(net,route));
+}
+void RoutingGraph::commitPrepared(int net,const PreparedRoute& prepared) {
     Measured measured(Timing::Commit);
-    if(owned.count(net)) throw std::logic_error("Double commit");
-    validate(net,route);
-    auto delta=resources(route.edges);
-    // 只预分配本次涉及的键。成功取得全部内存后，发布过程无需分配。
+    auto& owner=owned.at(net);
+    if(owner) throw std::logic_error("Double commit");
+    if(!prepared || net!=prepared->net || !available(*prepared)) throw std::invalid_argument("Infeasible route resources");
+    // 预分配全部键。提交期间没有新的内存分配，异常时只清理本次新增键。
     std::vector<Resource> inserted;
-    inserted.reserve(delta.size());
-    auto changed=owned.emplace(net,std::move(delta));
+    inserted.reserve(prepared->demand.size());
     try {
-        for(const auto& r:changed.first->second)
-            if(used.emplace(r.first,0.).second) inserted.push_back(r.first);
+        for(const auto& r:prepared->demand) if(!used.count(r.first)) {
+            used.emplace(r.first,0.);
+            inserted.push_back(r.first);
+        }
     } catch(...) {
-        for(const auto& key:inserted) used.erase(key);
-        owned.erase(changed.first);
+        for(auto id:inserted) used.erase(id);
         throw;
     }
-    for(const auto& r:changed.first->second) used.at(r.first)+=r.second;
-    publishDemand(changed.first->second);
+    for(const auto& r:prepared->demand) used.at(r.first)+=r.second;
+    publishDemand(*prepared);
+    owner=prepared;
+}
+bool RoutingGraph::replacePrepared(int net,const PreparedRoute& prepared) {
+    auto& owner=owned.at(net);
+    if(!owner) throw std::logic_error("Replacement by non-owner");
+    if(!prepared || prepared->graph!=this || prepared->net!=net)
+        throw std::invalid_argument("Invalid route summary for replacement");
+    if(!availableSites(prepared->sites,&owner->sites)) return false;
+    // 两个摘要都按资源 ID 排序。合并时先对新旧差量作全量预检，再发布变化。
+    std::vector<std::pair<Resource,double>> updates;
+    updates.reserve(owner->demand.size()+prepared->demand.size());
+    auto a=owner->demand.begin(),b=prepared->demand.begin();
+    while(a!=owner->demand.end() || b!=prepared->demand.end()) {
+        const auto id=b==prepared->demand.end() || (a!=owner->demand.end() && a->first<b->first)?a->first:b->first;
+        const double old=a!=owner->demand.end() && a->first==id?(a++)->second:0;
+        const double next=b!=prepared->demand.end() && b->first==id?(b++)->second:0;
+        if(old==next) continue;
+        const auto occupied=used.find(id);
+        double total=occupied==used.end()?0:occupied->second;
+        if(total+1e-12<old) throw std::logic_error("Invalid replacement ledger");
+        total=total-old+next;
+        if(total>capacity(id)+1e-12) return false;
+        updates.emplace_back(id,std::abs(total)<1e-12?0.:total);
+    }
+    std::vector<Resource> inserted;
+    inserted.reserve(updates.size());
+    try {
+        for(const auto& item:updates) if(item.second>0 && !used.count(item.first)) {
+            used.emplace(item.first,0.);
+            inserted.push_back(item.first);
+        }
+    } catch(...) {
+        for(auto id:inserted) used.erase(id);
+        throw;
+    }
+    for(const auto& item:updates) {
+        if(item.second==0) used.erase(item.first);
+        else used.at(item.first)=item.second;
+        if(item.first<volume) {
+            const auto loc=location(item.first);
+            model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,item.second);
+        }
+    }
+    owner=prepared;
+    return true;
 }
 void RoutingGraph::release(int net) {
     Measured measured(Timing::Release);
-    auto owner=owned.find(net);
-    if(owner==owned.end()) throw std::logic_error("Release by non-owner");
-    for(const auto& r:owner->second) {
+    auto& owner=owned.at(net);
+    if(!owner) throw std::logic_error("Release by non-owner");
+    for(const auto& r:owner->demand) {
         auto it=used.find(r.first);
         if(it==used.end() || it->second+1e-12<r.second) throw std::logic_error("Inconsistent resource ledger");
     }
-    for(const auto& r:owner->second) {
+    for(const auto& r:owner->demand) {
         auto it=used.find(r.first);
         it->second-=r.second;
         if(std::abs(it->second)<1e-12) used.erase(it);
     }
-    publishDemand(owner->second); owned.erase(owner);
+    publishDemand(*owner);
+    owner.reset();
 }
-
-void RoutingGraph::publishDemand(const Demand& changed) {
-    for(const auto& r:changed) if(std::get<0>(r.first)==GREdgeType::WIRE) {
+void RoutingGraph::publishDemand(const RouteResourceSummary& changed) {
+    for(const auto& r:changed.demand) {
+        if(r.first>=volume) break;
+        const auto loc=location(r.first);
         auto it=used.find(r.first);
-        model.dies[std::get<1>(r.first)]->grid.setWireDemand(std::get<2>(r.first),
-            std::get<3>(r.first),std::get<4>(r.first),it==used.end()?0:it->second);
+        model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,it==used.end()?0:it->second);
     }
 }
 void RoutingGraph::captureCongestion() {

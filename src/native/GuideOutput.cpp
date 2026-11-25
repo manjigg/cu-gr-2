@@ -109,7 +109,7 @@ Json writeSolution(const RoutingGraph& g,const std::vector<Route>& routes,const 
     out["wire_um_by_die"]={length[0],length[1]};out["wirelength_um"]=length[0]+length[1];
     out["via_count"]=vias;out["used_hbt"]=usedSites.size();out["hbt_assignments"]=assignments;
     double overflow[3]={};
-    for(const auto& r:g.demand()) overflow[static_cast<int>(std::get<0>(r.first))]+=std::max(0.,r.second-g.capacity(r.first));
+    for(const auto& r:g.demand()) overflow[static_cast<int>(g.location(r.first).type)]+=std::max(0.,r.second-g.capacity(r.first));
     out["wire_overflow"]=overflow[0];out["via_capacity_overflow"]=overflow[1];out["hbt_capacity_overflow"]=overflow[2];
     out["pin_patch_area"]=pinArea;out["wire_patch_area"]=wireArea;
     return out;
