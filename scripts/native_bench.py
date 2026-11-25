@@ -79,10 +79,14 @@ def main():
     parser.add_argument('--seed-seconds', type=float, default=60)
     parser.add_argument('--threads', type=int, default=1, help='Number of requested routing threads')
     parser.add_argument('--profile',action='store_true',help='Record nested C++ module times and the 100 slowest nets')
+    parser.add_argument('--options',type=Path,help='JSON file with additional native algorithm settings')
     parser.add_argument('--cases', nargs='+', choices=CASES, default=CASES)
     parser.add_argument('--jobs', type=int, default=1)
     args = parser.parse_args()
     binary = args.binary.resolve()
+    options=json.loads(args.options.read_text()) if args.options else {}
+    if not isinstance(options,dict) or any(k in options for k in ('dies','mapping','bonding','bonded_dbu','weights','provenance')):
+        parser.error('Options must be an object and cannot replace the benchmark protocol')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
 
@@ -91,6 +95,7 @@ def main():
         job.mkdir()
         source = args.references if args.references.is_file() else args.references/case/'f2f.json'
         manifest = design_manifest(source.resolve(), args.stage_seconds,case)
+        manifest.update(options)
         manifest['seed_seconds'] = args.seed_seconds
         manifest['master_seconds'] = args.master_seconds if args.master_seconds is not None else args.stage_seconds
         manifest['provenance'].update(profile=args.profile,requested_threads=args.threads)
@@ -109,6 +114,15 @@ def main():
         elapsed = time.monotonic()-start
         stats_path = job/'output/routing_statistics.json'
         stats = json.loads(stats_path.read_text()) if stats_path.exists() else {}
+        stages=stats.get('stages',[])
+        if stages:
+            with (job/'iteration_statistics.tsv').open('w') as stream:
+                fields=list(dict.fromkeys(k for stage in stages for k in stage))
+                writer=csv.DictWriter(stream,fields,delimiter='\t',lineterminator='\n')
+                writer.writeheader()
+                for stage in stages:
+                    writer.writerow({k:json.dumps(v,separators=(',',':')) if isinstance(v,dict) else v
+                                     for k,v in stage.items()})
         inventory = stats.get('inventory', {})
         metrics = stats.get('metrics') or {}
         record=dict(benchmark=case, status=stats.get('status', 'PROCESS_ERROR'), exit_code=proc.returncode,

@@ -12,19 +12,26 @@ public:
     void check() const;
 };
 using Routes=std::vector<Route>;
+struct ProjectedTopology;
+struct FastPatternCache {
+    std::shared_ptr<const ProjectedTopology> topology;
+};
 class PatternSearch {
 public:
     PatternSearch(const RoutingGraph& graph,int net,const Deadline& time):g(graph),net(net),time(time) {}
     Routes enumerate(bool detours) const;
+    Routes enumerateFast(bool detours,FastPatternCache& cache) const;
     Routes localSeed() const;
     Routes localSeed(const std::vector<std::vector<GRPoint>>& pins) const;
     Routes refineMaze(const Route&) const;
     std::set<Edges> localPaths(GRPoint a,GRPoint b) const;
 private:
+    using PathList=std::set<Edges>;
+    using PathCache=std::map<std::pair<GRPoint,GRPoint>,std::shared_ptr<const PathList>>;
     const RoutingGraph& g;
     int net;
     const Deadline& time;
-    std::set<Edges> paths(GRPoint a,GRPoint b,bool detours) const;
+    std::set<Edges> paths(GRPoint a,GRPoint b,bool detours,PathCache* cache=nullptr,bool fast=false) const;
 };
 struct MasterResult {
     std::string status;

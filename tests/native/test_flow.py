@@ -33,9 +33,11 @@ def run(cfg,dest,success=True):
         p=subprocess.run([binary,'-native',manifest,'-output',output],stdout=log,stderr=subprocess.STDOUT)
     stats=json.loads((output/'routing_statistics.json').read_text())
     if success:
-        assert p.returncode==0 and stats['status']=='OPTIMAL_CANDIDATE_POOL',stats
+        expected='FEASIBLE_FAST' if cfg.get('routing_mode')=='fast' else 'OPTIMAL_CANDIDATE_POOL'
+        assert p.returncode==0 and stats['status']==expected,stats
         check(manifest,output)
-        assert stats['stages'][-1]['gap']==0
+        if expected=='OPTIMAL_CANDIDATE_POOL':
+            assert stats['stages'][-1]['gap']==0
     else:
         assert p.returncode==2 and stats['status']=='INFEASIBLE_CANDIDATE_POOL' and stats['metrics'] is None
     return stats
@@ -158,6 +160,12 @@ def regress(out):
     triple=run(three,out/'three-hbt')
     assert triple['metrics']['used_hbt']==3 and abs(triple['metrics']['wirelength_um']-4.2)<1e-9
     assert triple['inventory']['real_pins']==6 and triple['stages'][0]['candidate_generation']=='FINISHED'
+    fast=copy.deepcopy(template)
+    fast.update(routing_mode='fast',net_seconds=3,seed_seconds=10)
+    staged=run(fast,out/'incremental')
+    assert staged['metrics']['used_hbt']>=1 and staged['stages'][0]['routed_nets']==1
+    assert staged['stages'][0]['best_feasible']>=staged['stages'][-1]['best_feasible']
+    assert staged['stages'][-1]['gap'] is None and staged['unrouted_net_ids']==[]
     cfg=copy.deepcopy(template)
     cfg['bonding']['sites'][0]['fixed_net']=0
     run(cfg,out/'fixed')

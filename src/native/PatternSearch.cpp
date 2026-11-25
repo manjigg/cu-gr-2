@@ -1,5 +1,7 @@
 #include "PatternSearch.h"
 #include "BranchRepair.h"
+#include "MedianRegion.h"
+#include "FluteAccess.h"
 #include "Profile.h"
 #include "gr/PatternRoute.h"
 #include <numeric>
@@ -113,9 +115,19 @@ Routes PatternSearch::localSeed(const std::vector<std::vector<GRPoint>>& pins) c
     }
     return alternative;
 }
-std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours) const {
+std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache* cache,bool fast) const {
+    auto pathsFor=[&](GRPoint u,GRPoint v)->std::shared_ptr<const PathList> {
+        const auto key=std::make_pair(u,v);
+        if(cache) {
+            const auto found=cache->find(key);
+            if(found!=cache->end()) return found->second;
+        }
+        auto generated=std::make_shared<const PathList>(localPaths(u,v));
+        if(cache && cache->size()<512) cache->emplace(key,generated);
+        return generated;
+    };
     std::set<Edges> out;
-    if(a.dieIdx==b.dieIdx) out=localPaths(a,b);
+    if(a.dieIdx==b.dieIdx) out=*pathsFor(a,b);
     if(detours && a.dieIdx==b.dieIdx && (a.x!=b.x || a.y!=b.y)) {
         const auto& grid=g.model.dies[a.dieIdx]->grid;
         GRNet local(net,"detour",{{a},{b}},nullptr);
@@ -150,6 +162,74 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours) const {
     };
     if(a.dieIdx==b.dieIdx && !detours) return out;
     Measured measured(Timing::HbtSearch);
+    const bool bounded=fast && g.model.config.value("enable_hbt_index",true);
+    if(bounded) {
+        const auto raw=g.model.config.value("hbt_candidate_limit",8);
+        if(raw<1 || raw>128) throw std::invalid_argument("Invalid HBT search limit");
+        const bool cross=a.dieIdx!=b.dieIdx;
+        // 同 Die 短分支已有可行的局部模式时，按需在拥塞绕行中尝试额外的双 HBT。
+        if(!cross && !out.empty()) {
+            bool pressured=false;
+            const auto& grid=g.model.dies[a.dieIdx]->grid;
+            const auto& congestion=g.congestion()[a.dieIdx];
+            if(!congestion.empty()) for(const auto& e:*out.begin()) if(e.type==GREdgeType::WIRE)
+                pressured|=congestion[grid.getLayerDirection(e.a.layerIdx)][e.a.x][e.a.y];
+            if(!pressured) return out;
+        }
+        const auto region=weightedMedianRegion({pa,pb},{g.l1Weight(a.dieIdx),g.l1Weight(b.dieIdx)});
+        std::set<std::pair<int,int>> seen;
+        double best=std::numeric_limits<double>::infinity();
+        for(size_t limit=raw;limit<=std::max<size_t>(32,raw);limit*=2) {
+            auto starts=cross?g.sitesNearRegion(region.low,region.high,limit):g.sitesNearRegion(pa,pa,limit);
+            auto finishes=cross?std::vector<const Site*>{}:g.sitesNearRegion(pb,pb,limit);
+            auto score=[&](const Site* site) {
+                double lower=std::numeric_limits<double>::infinity();
+                for(const auto& h:site->transitions)
+                    lower=std::min(lower,cross?g.singleHbtLowerBound(a,b,h):distance(site));
+                return std::make_pair(lower,site->id);
+            };
+            std::sort(starts.begin(),starts.end(),[&](const Site* x,const Site* y){return score(x)<score(y);});
+            for(const auto* site:starts) {
+                Profile::count(Event::HbtSites);
+                auto connect=[&](const Edge& h,const Edge* second) {
+                    time.check();
+                    if(!g.available(net,{h})) return;
+                    auto u=a.dieIdx?h.b:h.a;
+                    auto v=a.dieIdx?h.a:h.b;
+                    Edges crossing{h};
+                    if(second) crossing.insert(*second);
+                    auto last=second?(a.dieIdx?second->b:second->a):v;
+                    if(second && !g.available(net,crossing)) return;
+                    auto ahead=pathsFor(a,u);
+                    if(ahead->empty()) return;
+                    auto tail=pathsFor(last,b);
+                    if(tail->empty()) return;
+                    auto middle=second?pathsFor(v,a.dieIdx?second->a:second->b):
+                                       std::make_shared<const PathList>(PathList{Edges{}});
+                    for(const auto& left:*ahead) for(const auto& right:*tail) for(const auto& mid:*middle) {
+                        time.check();
+                        auto whole=join(join(left,right),join(mid,crossing));
+                        if(!g.available(net,whole)) continue;
+                        best=std::min(best,g.cost(whole));
+                        out.insert(std::move(whole));
+                    }
+                };
+                if(cross) {
+                    if(!seen.emplace(site->id,-1).second) continue;
+                    // 本地上界可用于单条独立分支，联合 DP 仍保留多个替代站。
+                    if(g.model.config.value("enable_hbt_pruning",true) && out.size()>=static_cast<size_t>(raw) &&
+                       score(site).first>best+8.) continue;
+                    for(const auto& h:site->transitions) connect(h,nullptr);
+                } else for(const auto* end:finishes) {
+                    if(end==site || !seen.emplace(site->id,end->id).second) continue;
+                    Profile::count(Event::HbtSites);
+                    for(const auto& h:site->transitions) for(const auto& second:end->transitions) connect(h,&second);
+                }
+            }
+            if(std::isfinite(best) || starts.size()<limit) break;
+        }
+        return out;
+    }
     std::vector<const Site*> sites;
     for(const auto& item:g.sites) if(!item.second.transitions.empty()) sites.push_back(&item.second);
     std::stable_sort(sites.begin(),sites.end(),[&](const Site* x,const Site* y){return distance(x)<distance(y);});
@@ -158,10 +238,10 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours) const {
         Profile::count(Event::HbtSites);
         GRPoint u=a.dieIdx?h.b:h.a, v=a.dieIdx?h.a:h.b;
         if(!g.available(net,{h})) continue;
-        auto starts=localPaths(a,u);
+        auto starts=pathsFor(a,u);
         auto splice=[&](const Edges& middle,GRPoint last) {
-            const auto tails=localPaths(last,b);
-            for(const auto& left:starts) for(const auto& right:tails) {
+            const auto tails=pathsFor(last,b);
+            for(const auto& left:*starts) for(const auto& right:*tails) {
                 time.check();
                 auto whole=join(join(left,middle),right);
                 if(g.available(net,whole)) out.insert(std::move(whole));
@@ -172,25 +252,30 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours) const {
             time.check();
             Profile::count(Event::HbtSites);
             GRPoint w=a.dieIdx?t.a:t.b, z=a.dieIdx?t.b:t.a;
-            for(auto mid:localPaths(v,w)) {
+            const auto mids=pathsFor(v,w);
+            for(auto mid:*mids) {
                 mid.insert(h);mid.insert(t);splice(mid,z);
             }
         }
     }
     return out;
 }
-Routes PatternSearch::enumerate(bool detours) const {
-    Measured measured(Timing::PatternDP);
+struct ProjectedTopology {
+    std::map<XY,std::vector<int>> projection;
+    std::map<XY,std::set<XY>> adjacent;
+};
+static std::shared_ptr<const ProjectedTopology> projectTopology(const RoutingGraph& g,int net) {
     const auto& pins=g.terminals(net);
     if(pins.empty()) throw std::invalid_argument("Cannot route an empty physical terminal set");
-    std::map<XY,std::vector<int>> projection;
+    auto output=std::make_shared<ProjectedTopology>();
+    auto& projection=output->projection;
     for(int i=0;i<int(pins.size());++i) projection[g.center(pins[i].front())].push_back(i);
     std::vector<int> xs,ys;
     for(const auto& item:projection) {
         for(auto coord:item.first) if(coord<INT_MIN || coord>INT_MAX) throw std::out_of_range("FLUTE coordinate");
         xs.push_back(item.first[0]);ys.push_back(item.first[1]);
     }
-    std::map<XY,std::set<XY>> adj;
+    auto& adj=output->adjacent;
     const int degree=xs.size();
     if(degree>1) {
         auto range=[](const std::vector<int>& v){auto p=std::minmax_element(v.begin(),v.end());return int64_t(*p.second)-*p.first;};
@@ -198,6 +283,7 @@ Routes PatternSearch::enumerate(bool detours) const {
         Tree t;
         {
             Measured fluteTime(Timing::Flute);
+            std::lock_guard<std::mutex> access(fluteMutex());
             t=flute(degree,xs.data(),ys.data(),ACCURACY);
         }
         std::unique_ptr<Branch,decltype(&free)> memory(t.branch,free);
@@ -207,6 +293,14 @@ Routes PatternSearch::enumerate(bool detours) const {
             if(x!=y) {adj[x].insert(y);adj[y].insert(x);}
         }
     }
+    return output;
+}
+Routes PatternSearch::enumerate(bool detours) const {
+    Measured measured(Timing::PatternDP);
+    const auto& pins=g.terminals(net);
+    const auto topology=projectTopology(g,net);
+    const auto& projection=topology->projection;
+    const auto& adj=topology->adjacent;
     // 每个子树的标签由根的真实物理状态与完整边集合索引。
     // 只有两者完全相同才合并；未来的共享、冲突和回溯完全相同。
     using Labels=std::map<GRPoint,std::set<Edges>>;
@@ -254,7 +348,8 @@ Routes PatternSearch::enumerate(bool detours) const {
             for(auto ap:pins[pin]) leaf[ap].emplace();
             merge(leaf);
         }
-        for(auto next:adj[xy]) if(!visited.count(next)) merge(solve(next));
+        const auto children=adj.find(xy);
+        if(children!=adj.end()) for(auto next:children->second) if(!visited.count(next)) merge(solve(next));
         return states;
     };
     Routes result;
@@ -266,6 +361,152 @@ Routes PatternSearch::enumerate(bool detours) const {
     }
     return result;
 }
+Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const {
+    Measured measured(Timing::PatternDP);
+    const auto& pins=g.terminals(net);
+    const auto& cfg=g.model.config;
+    const auto requested=cfg.value("beam_width",8);
+    if(requested<1 || requested>128) throw std::invalid_argument("Invalid beam width");
+    const size_t width=pins.size()>32?std::max(2,requested/2):requested;
+    PathCache pathCache;
+    auto* memo=cfg.value("enable_path_cache",true)?&pathCache:nullptr;
+    if(pins.size()==2) {
+        // 两 Pin 树没有内部 Steiner 子问题，直接枚举两端实际接入点及合法跨接。
+        Routes found;
+        std::set<Edges> seen;
+        try {
+            for(auto a:pins[0]) for(auto b:pins[1]) {
+                for(const auto& edges:paths(a,b,detours,memo,true)) {
+                    time.check();
+                    Route route{a,edges};
+                    try {g.validate(net,route);} catch(const std::invalid_argument&) {continue;}
+                    if(seen.insert(edges).second) found.push_back(std::move(route));
+                }
+            }
+        } catch(const SearchTimeout&) {
+            if(found.empty()) throw;
+            Profile::retry();
+        }
+        return found;
+    }
+    if(!cache.topology || !cfg.value("enable_topology_cache",true)) cache.topology=projectTopology(g,net);
+    const auto& topology=*cache.topology;
+    struct Label {
+        // 已排序的单位边。合并使用线性并集，复用不可变标签，完整根才重建 Route。
+        std::vector<Edge> edges;
+        PathQuality quality;
+    };
+    using Bucket=std::vector<Label>;
+    using Table=std::map<GRPoint,Bucket>;
+    auto keepDiverse=[&](Bucket& labels) {
+        if(labels.size()<=width) return;
+        auto less=[](const Label& a,const Label& b) {
+            return std::tie(a.quality.cost,a.quality.wire,a.quality.vias,a.quality.hbt,a.edges)<
+                   std::tie(b.quality.cost,b.quality.wire,b.quality.vias,b.quality.hbt,b.edges);
+        };
+        std::sort(labels.begin(),labels.end(),less);
+        const auto count=labels.size();
+        std::vector<bool> selected(count,false);
+        Bucket kept;
+        auto take=[&](size_t index) {
+            if(!selected[index] && kept.size()<width) {
+                selected[index]=true;
+                kept.push_back(std::move(labels[index]));
+            }
+        };
+        auto best=[&](const auto& rank) {
+            auto index=count;
+            for(size_t i=0;i<count;++i)
+                if(!selected[i] && (index==count || rank(labels[i])<rank(labels[index]))) index=i;
+            if(index<count) take(index);
+        };
+        take(0);
+        best([](const Label& label){return label.quality.hbt.size();});
+        best([](const Label& label){return label.quality.wire;});
+        best([](const Label& label){return label.quality.vias;});
+        std::set<std::vector<int>> sites;
+        for(const auto& label:kept) sites.insert(label.quality.hbt);
+        for(size_t i=0;i<count && kept.size()<width;++i)
+            if(!selected[i] && sites.insert(labels[i].quality.hbt).second) take(i);
+        for(size_t i=0;i<count && kept.size()<width;++i) take(i);
+        Profile::count(Event::LabelsPruned,count-kept.size());
+        labels.swap(kept);
+    };
+    auto merge=[&](const Table& a,const Table& b) {
+        Table result;
+        for(const auto& from:a) {
+            Bucket next;
+            for(const auto& to:b) {
+                for(const auto& path:paths(from.first,to.first,detours,memo,true)) {
+                    for(const auto& left:from.second) for(const auto& right:to.second) {
+                        time.check();
+                        Profile::count(Event::LabelMerges);
+                        std::vector<Edge> child;
+                        child.reserve(left.edges.size()+right.edges.size());
+                        std::set_union(left.edges.begin(),left.edges.end(),right.edges.begin(),right.edges.end(),
+                                       std::back_inserter(child));
+                        Label combined;
+                        combined.edges.reserve(child.size()+path.size());
+                        std::set_union(child.begin(),child.end(),path.begin(),path.end(),std::back_inserter(combined.edges));
+                        auto duplicate=std::any_of(next.begin(),next.end(),[&](const Label& old) {
+                            return !(old.edges<combined.edges) && !(combined.edges<old.edges);
+                        });
+                        if(duplicate || !g.evaluateCompact(net,combined.edges,combined.quality)) {
+                            Profile::count(Event::LabelsPruned);
+                            continue;
+                        }
+                        next.push_back(std::move(combined));
+                        Profile::count(Event::LabelsGenerated);
+                        Profile::labels(next.size());
+                        if(next.size()>=2*width) keepDiverse(next);
+                    }
+                }
+            }
+            keepDiverse(next);
+            if(!next.empty()) result.emplace(from.first,std::move(next));
+        }
+        return result;
+    };
+    std::set<XY> visited;
+    std::function<Table(XY)> solve=[&](XY xy) {
+        time.check();visited.insert(xy);
+        Table table;
+        for(int d:{0,1}) {
+            if(!detours && g.model.nets[net].localNet[d]<0) continue;
+            const auto& die=*g.model.dies[d];
+            std::array<int,2> cell{};
+            bool inside=true;
+            for(int i:{0,1}) {
+                const int axis=die.transform.axes[i];
+                const auto v=(xy[i]-die.transform.offset[i])*die.transform.signs[i];
+                const auto& lines=die.design->getGridlines()[axis];
+                if(v<lines.front()*die.transform.scale || v>lines.back()*die.transform.scale) {inside=false;break;}
+                cell[axis]=g.cell(d,axis,static_cast<int64_t>(std::floor(double(v)/die.transform.scale)));
+            }
+            if(inside) for(int l=0;l<int(die.grid.getNumLayers());++l)
+                table[GRPoint(d,l,cell[0],cell[1])].emplace_back();
+        }
+        const auto point=topology.projection.find(xy);
+        if(point!=topology.projection.end()) for(int pin:point->second) {
+            Table terminal;
+            for(auto ap:pins[pin]) terminal[ap].emplace_back();
+            table=merge(table,terminal);
+        }
+        const auto neighbors=topology.adjacent.find(xy);
+        if(neighbors!=topology.adjacent.end()) for(auto child:neighbors->second)
+            if(!visited.count(child)) table=merge(table,solve(child));
+        return table;
+    };
+    Routes routes;
+    std::set<Edges> seen;
+    for(const auto& state:solve(topology.projection.begin()->first)) for(const auto& label:state.second) {
+        Route route{state.first,Edges(label.edges.begin(),label.edges.end())};
+        try {g.validate(net,route);} catch(const std::invalid_argument&) {continue;}
+        if(seen.insert(route.edges).second) routes.push_back(std::move(route));
+    }
+    return routes;
+}
+
 // 将迷宫树中的无分支同层线段送回模式路径 DP；物理 HBT 和真实端点作为锚点。
 Routes PatternSearch::refineMaze(const Route& tree) const {
     Measured measured(Timing::PatternDP);

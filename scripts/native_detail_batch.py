@@ -17,6 +17,7 @@ def main():
         parser.add_argument(name,type=Path)
     parser.add_argument('--jobs',type=int,default=3)
     parser.add_argument('--threads',type=int,default=8)
+    parser.add_argument('--cases',nargs='+',choices=CASES,default=CASES)
     parser.add_argument('--wait',action='store_true')
     parser.add_argument('--reuse-global',type=Path)
     parser.add_argument('--reuse-detail',type=Path)
@@ -85,6 +86,11 @@ def main():
                     job/'output',directory,'--threads',str(args.threads),'--parallel-dies','--geometry-tool',args.geometry_tool],
                     stdout=log,stderr=subprocess.STDOUT)
             passed=p.returncode==0
+            if passed:
+                with (out/(case+'.conductor-replay.log')).open('w') as log:
+                    checked=subprocess.run([sys.executable,scripts/'native_joint.py',job/'output',
+                                            directory,'--record'],stdout=log,stderr=subprocess.STDOUT)
+                passed=checked.returncode==0
         row=dict(status='PASSED' if passed else 'FAILED',hbt_count=stats['metrics']['used_hbt'],
                  output_directory=str(directory))
         path=directory/'report.json'
@@ -104,14 +110,14 @@ def main():
             'top_wall_seconds','bottom_wall_seconds','total_wall_seconds','top_geometry','bottom_geometry',
             'joint_connectivity','output_directory']
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        tasks=[pool.submit(validate,case) for case in CASES]
+        tasks=[pool.submit(validate,case) for case in args.cases]
         for task in concurrent.futures.as_completed(tasks):
             case,record=task.result()
             records[case]=record
             with (out/'summary.tmp').open('w') as stream:
                 w=csv.DictWriter(stream,fields,delimiter='\t')
                 w.writeheader()
-                for name in CASES:
+                for name in args.cases:
                     w.writerow(dict(benchmark=name,**records.get(name,dict(status='PENDING'))))
             (out/'summary.tmp').replace(out/'summary.tsv')
     return int(any(r['status']!='PASSED' for r in records.values()))

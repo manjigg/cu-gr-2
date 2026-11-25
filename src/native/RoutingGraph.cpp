@@ -196,6 +196,42 @@ std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chose
     // 只给初解选择最近可用站点。精确 DP 独立枚举全阵列。
     if(siteIndex.empty()) return {};
     boostPoint point(target[0],target[1]);
+    if(model.config.value("routing_mode",std::string("exact"))=="fast" &&
+       model.config.value("enable_hbt_index",true)) {
+        const bool preserveTies=model.config.value("preserve_seed_ties",true);
+        std::set<int> visited=excluded;
+        auto distance=[&](int id) {
+            const auto xy=sites.at(id).bonded;
+            long double dx=xy[0]-target[0],dy=xy[1]-target[1];
+            return dx*dx+dy*dy;
+        };
+        std::vector<Edge> first;
+        long double nearest=0;
+        // 小规模近邻优先。都被占用时扩大查询，最终覆盖完整合法阵列。
+        size_t limit=std::min<size_t>(8,siteIndex.size());
+        bool tie=false;
+        while(true) {
+            for(auto it=siteIndex.qbegin(bgi::nearest(point,limit));it!=siteIndex.qend();++it) {
+                const auto score=distance(it->second);
+                if(!first.empty() && score>nearest) return first;
+                if(!visited.insert(it->second).second) continue;
+                Profile::count(Event::HbtSites);
+                for(const auto& h:sites.at(it->second).transitions) {
+                    Edges test=chosen;test.insert(h);
+                    if(!available(net,test)) continue;
+                    if(!preserveTies) return {h};
+                    if(!first.empty()) tie=true;
+                    else {first.push_back(h);nearest=score;}
+                    break;
+                }
+                if(tie) break;
+            }
+            // 确有两个等距可用站点时运行旧查询，以保留已有初解的并列决策次序。
+            if(tie) break;
+            if(limit==siteIndex.size()) return first;
+            limit=std::min(siteIndex.size(),2*limit);
+        }
+    }
     for(auto it=siteIndex.qbegin(bgi::nearest(point,siteIndex.size()));it!=siteIndex.qend();++it) {
         Profile::count(Event::HbtSites);
         if(excluded.count(it->second)) continue;
@@ -205,6 +241,26 @@ std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chose
         }
     }
     return {};
+}
+std::vector<const Site*> RoutingGraph::sitesNearRegion(XY low,XY high,size_t count) const {
+    std::vector<const Site*> result;
+    if(!count || siteIndex.empty()) return result;
+    auto bound=[](int64_t x){return DBU(std::max<int64_t>(INT_MIN,std::min<int64_t>(INT_MAX,x)));};
+    const boostBox region(boostPoint(bound(low[0]),bound(low[1])),boostPoint(bound(high[0]),bound(high[1])));
+    const auto target=std::min(count,siteIndex.size());
+    result.reserve(target);
+    for(auto it=siteIndex.qbegin(bgi::nearest(region,target));it!=siteIndex.qend();++it)
+        result.push_back(&sites.at(it->second));
+    return result;
+}
+double RoutingGraph::singleHbtLowerBound(GRPoint a,GRPoint b,const Edge& h) const {
+    const GRPoint u=a.dieIdx?h.b:h.a,v=a.dieIdx?h.a:h.b;
+    const auto pa=center(a),pb=center(b),pu=center(u),pv=center(v);
+    double wire=0;
+    for(int axis:{0,1}) wire+=std::abs(pa[axis]-pu[axis])+std::abs(pb[axis]-pv[axis]);
+    // 端点至着陆格中心的两段线属于不同 Die。只计算独立的最低平面位移与换层次数。
+    return hbtWeight+wire*wireWeight/model.units+
+           viaWeight*(std::abs(a.layerIdx-u.layerIdx)+std::abs(b.layerIdx-v.layerIdx));
 }
 std::vector<Edge> RoutingGraph::neighbors(GRPoint p,int net) const {
     if(!validPoint(p)) throw std::out_of_range("Invalid search state");
@@ -253,7 +309,8 @@ RoutingGraph::Footprint RoutingGraph::landingFootprint(GRPoint p) const {
     if(lo+hi==0) return {0.,false,false};
     return {model.parameters.via_multiplier*die.design->getLayer(p.layerIdx).getMinLength()/(lo+hi),lo>0,hi>0};
 }
-Demand RoutingGraph::resources(const Edges& edges) const {
+template<class Range>
+Demand RoutingGraph::computeDemand(const Range& edges) const {
     Measured measured(Timing::Resources);
     Demand res;
     for(const auto& edge:edges) {
@@ -273,6 +330,7 @@ Demand RoutingGraph::resources(const Edges& edges) const {
     }
     return res;
 }
+Demand RoutingGraph::resources(const Edges& edges) const {return computeDemand(edges);}
 unsigned RoutingGraph::countTracks(int d,int l,int pos) const {
     const auto& die=*model.dies[d];
     const auto& layer=die.design->getLayer(l);
@@ -300,7 +358,8 @@ double RoutingGraph::capacity(Resource id) const {
     }
     return count;
 }
-bool RoutingGraph::collectHbtSites(int net,const Edges& edges,std::vector<int>& chosen) const {
+template<class Range>
+bool RoutingGraph::collectHbtSites(int net,const Range& edges,std::vector<int>& chosen) const {
     for(const auto& edge:edges) {
         if(!allowed(net,edge)) return false;
         if(edge.type==GREdgeType::HBT) chosen.push_back(edge.site);
@@ -314,21 +373,25 @@ bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vect
     };
     for(int id:chosen) {
         if(alreadyUsed(id)) return false;
-        if(spacing<=0) continue;
-        const auto a=sites.at(id).bonded;
-        auto bounded=[](double x) {return static_cast<DBU>(std::max<double>(INT_MIN,std::min<double>(INT_MAX,x)));};
-        const boostBox area(boostPoint(bounded(a[0]-spacing),bounded(a[1]-spacing)),
-                            boostPoint(bounded(a[0]+spacing),bounded(a[1]+spacing)));
-        for(auto site=siteIndex.qbegin(bgi::intersects(area));site!=siteIndex.qend();++site) {
-            const int other=site->second;
-            if(other==id) continue;
-            const auto& item=sites.at(other);
-            if(!std::binary_search(chosen.begin(),chosen.end(),other) && !alreadyUsed(other) && item.owner<0) continue;
-            const auto b=item.bonded;
-            if(std::hypot(double(a[0]-b[0]),double(a[1]-b[1]))<spacing) return false;
-        }
+        for(int other:spacingNeighbors(id))
+            if(std::binary_search(chosen.begin(),chosen.end(),other) || alreadyUsed(other) || sites.at(other).owner>=0)
+                return false;
     }
     return true;
+}
+std::vector<int> RoutingGraph::spacingNeighbors(int id) const {
+    std::vector<int> candidates;
+    if(spacing<=0) return candidates;
+    const auto a=sites.at(id).bonded;
+    auto bounded=[](double x){return static_cast<DBU>(std::max<double>(INT_MIN,std::min<double>(INT_MAX,x)));};
+    const boostBox area(boostPoint(bounded(a[0]-spacing),bounded(a[1]-spacing)),
+                        boostPoint(bounded(a[0]+spacing),bounded(a[1]+spacing)));
+    for(auto q=siteIndex.qbegin(bgi::intersects(area));q!=siteIndex.qend();++q) {
+        if(q->second==id) continue;
+        const auto b=sites.at(q->second).bonded;
+        if(std::hypot(double(a[0]-b[0]),double(a[1]-b[1]))<spacing) candidates.push_back(q->second);
+    }
+    return candidates;
 }
 bool RoutingGraph::available(int net,const Edges& edges) const {
     Measured measured(Timing::Available);
@@ -350,7 +413,42 @@ bool RoutingGraph::available(const RouteResourceSummary& prepared) const {
     }
     return true;
 }
-double RoutingGraph::baseCost(const Edges& edges,const Demand& demand) const {
+bool RoutingGraph::evaluateCompact(int net,const std::vector<Edge>& edges,PathQuality& quality) const {
+    Measured measured(Timing::Available);
+    if(!collectHbtSites(net,edges,quality.hbt) || !availableSites(quality.hbt)) return false;
+    const auto demand=computeDemand(edges);
+    for(const auto& r:demand) {
+        auto it=used.find(r.first);
+        if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
+    }
+    quality.cost=baseCost(edges,demand);
+    for(const auto& r:demand) quality.cost+=extraPrice(r.first,r.second);
+    for(const auto& edge:edges) {
+        if(edge.type==GREdgeType::VIA) ++quality.vias;
+        if(edge.type==GREdgeType::WIRE) quality.wire+=wireUm(edge);
+    }
+    return true;
+}
+bool RoutingGraph::extendPath(int net,const Edges& path,Edges& tree,Demand& demand,std::vector<int>& hbt) const {
+    Measured measured(Timing::Available);
+    Edges added;
+    std::set_difference(path.begin(),path.end(),tree.begin(),tree.end(),std::inserter(added,added.end()));
+    auto nextHbt=hbt;
+    if(!collectHbtSites(net,added,nextHbt) || !availableSites(nextHbt)) return false;
+    const auto increase=computeDemand(added);
+    for(const auto& r:increase) {
+        const auto local=demand.find(r.first);
+        const auto external=used.find(r.first);
+        const double total=r.second+(local==demand.end()?0.:local->second)+(external==used.end()?0.:external->second);
+        if(total>capacity(r.first)+1e-12) return false;
+    }
+    tree.insert(added.begin(),added.end());
+    for(const auto& r:increase) demand[r.first]+=r.second;
+    hbt.swap(nextHbt);
+    return true;
+}
+template<class Range>
+double RoutingGraph::baseCost(const Range& edges,const Demand& demand) const {
     double value=0;
     for(const auto& edge:edges)
         value+=edge.type==GREdgeType::WIRE?wireWeight*wireUm(edge):edge.type==GREdgeType::VIA?viaWeight:hbtWeight;
@@ -375,22 +473,28 @@ double RoutingGraph::resourcePrice(Resource id,double cap,double demand) const {
     }
     return value;
 }
+double RoutingGraph::extraPrice(Resource id,double demand) const {
+    if(dynamicPrice.empty()) return 0;
+    const auto it=dynamicPrice.find(id);
+    return it==dynamicPrice.end()?0:it->second*demand;
+}
 double RoutingGraph::stepCost(int net,const Edge& edge) const {
     Measured measured(Timing::StepCost);
     const auto inf=std::numeric_limits<double>::infinity();
-    if(edge.type==GREdgeType::HBT) return available(net,{edge})?cost({edge}):inf;
+    if(edge.type==GREdgeType::HBT) return available(net,{edge})?cost({edge})+extraPrice(resourceId(edge)):inf;
     const auto& die=*model.dies[edge.a.dieIdx];
     auto bounds=[&](GRPoint p,double demand) {
         const auto r=die.grid.getEdge(p.layerIdx,p.x,p.y);
         if(r.getResource()+1e-12<demand) return inf;
-        return resourcePrice(pointId(p),r.capacity,demand);
+        auto id=pointId(p);
+        return resourcePrice(id,r.capacity,demand)+extraPrice(id,demand);
     };
     if(edge.type==GREdgeType::WIRE) return wireWeight*wireUm(edge)+bounds(edge.a,1);
     auto id=resourceId(edge);
     double cap=capacity(id);
     auto it=used.find(id);
     if((it==used.end()?0:it->second)+1>cap+1e-12) return inf;
-    double total=viaWeight+resourcePrice(id,cap,1);
+    double total=viaWeight+resourcePrice(id,cap,1)+extraPrice(id);
     for(auto p:{edge.a,edge.b}) {
         const auto footprint=landingFootprint(p);
         if(!footprint.low && !footprint.high) return inf;

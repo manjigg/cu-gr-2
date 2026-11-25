@@ -1,5 +1,6 @@
 #include "native/SparseMaze.h"
 #include "native/BranchRepair.h"
+#include "native/ConflictOptimizer.h"
 #include "gr/PatternRoute.h"
 using namespace native3d;
 int main(int argc,char** argv) {
@@ -58,6 +59,17 @@ int main(int argc,char** argv) {
     const auto constrained=selectRoutes(graph,compete,time);
     if(constrained.status!="OPTIMAL" || constrained.selection!=std::vector<unsigned>{1,0} ||
        constrained.objective!=10 || constrained.lower!=10 || !graph.demand().empty()) return 1;
+    const auto lower=graph.sites.at(1).transitions.at(0);
+    Route other{lower.a,{lower}};
+    std::vector<std::vector<PreparedRoute>> contenders{
+        {graph.prepareRoute(0,lifted),graph.prepareRoute(0,direct),graph.prepareRoute(0,other)},
+        {graph.prepareRoute(1,direct)}};
+    for(int n=0;n<2;++n) graph.commitPrepared(n,contenders[n][0]);
+    const auto conflict=buildConflictGroups(graph,contenders,4,0.5);
+    if(conflict.groups!=std::vector<std::vector<int>>{{0,1}} || conflict.contested==0 || conflict.prices.empty()) return 1;
+    for(int n=0;n<2;++n) graph.release(n);
+    const auto local=selectLocal(graph,conflict.groups[0],contenders,time);
+    if(!local.complete || local.selection!=std::vector<size_t>{2,0} || !graph.demand().empty()) return 1;
     for(auto& candidates:pool)
         candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[](const Route& r) {
             for(const auto& e:r.edges) if(e.type==GREdgeType::HBT && e.site!=0) return true;

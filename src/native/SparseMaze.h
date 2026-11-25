@@ -13,6 +13,6 @@ private:
     const RoutingGraph& graph;
     int net;
     const Deadline& time;
-    bool grow(Route& tree,int stride,bool allowDieDetour) const;
+    bool grow(Route& tree,int stride,bool allowDieDetour,bool bounded) const;
 };
 }

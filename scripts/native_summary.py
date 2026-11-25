@@ -81,6 +81,12 @@ def global_record(directory,case,replay_binary=None):
                max_rss_kb=int(process['max_rss_kb']),exit_code=int(process['exit_code']),
                global_nets=stats['inventory']['global_nets'],cross_die_nets=stats['inventory']['cross_die_nets'],
                real_pins=stats['inventory']['real_pins'])
+    row['legal_hbt_sites']=int(process['legal_sites']) if process.get('legal_sites') else None
+    if (job/'profile.json').is_file():
+        modules=load(job/'profile.json')['modules']
+        for name,metric in [('seed','seed_seconds'),('pattern_dp','pattern_seconds'),
+                            ('sparse_maze','maze_seconds'),('master_solver','optimizer_seconds')]:
+            row[metric]=modules[name]['inclusive_seconds']
     if m:
         with (job/'output/hbt_assignment.tsv').open() as f:
             crossings=Counter(int(r['net_id']) for r in csv.DictReader(f,delimiter='\t'))
@@ -103,7 +109,7 @@ def global_record(directory,case,replay_binary=None):
 DETAIL_FIELDS=('benchmark status completed_dies passed_dies top_status bottom_status top_drc bottom_drc total_drc '
                'top_wire_length_um bottom_wire_length_um total_wire_length_um top_via_count bottom_via_count '
                'total_via_count hbt_count top_wall_seconds bottom_wall_seconds sum_wall_seconds top_geometry '
-               'bottom_geometry joint_connectivity output_directory').split()
+               'bottom_geometry joint_connectivity global_router_seconds detail_wall_seconds output_directory').split()
 
 
 def detail_record(directory,case,global_dir,earlier):
@@ -118,6 +124,10 @@ def detail_record(directory,case,global_dir,earlier):
     if not path.exists():
         path=job/'report.json'
     report=load(path) if path.exists() else {}
+    row['global_router_seconds']=stats.get('routing_seconds')
+    measured=job/'report.json'
+    if measured.exists():
+        row['detail_wall_seconds']=load(measured).get('detail_wall_seconds')
     completed=passed=0
     for side in ('top','bottom'):
         result=job/side/'detail.json'

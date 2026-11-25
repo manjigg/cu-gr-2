@@ -1,12 +1,14 @@
 #include "PatternRoute.h"
 #ifdef CUGR_NATIVE_3D
 #include "native/Profile.h"
+#include "native/FluteAccess.h"
 #endif
 
 namespace {
 Tree buildFlute(int degree, DTYPE* xs, DTYPE* ys) {
 #ifdef CUGR_NATIVE_3D
     native3d::Measured measured(native3d::Timing::Flute);
+    std::lock_guard<std::mutex> access(native3d::fluteMutex());
 #endif
     return flute(degree, xs, ys, ACCURACY);
 }

@@ -2,6 +2,7 @@
 import argparse
 import collections
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -139,6 +140,7 @@ exit 0
 
 
 def main():
+    started=time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     for arg in ['openroad','manifest','global_dir','output']:
         parser.add_argument(arg, type=Path)
@@ -154,6 +156,15 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     assignments = list(csv.DictReader((gr/'hbt_assignment.tsv').open(), delimiter='\t'))
+    def file_digest(path):
+        digest=hashlib.sha256()
+        with path.open('rb') as stream:
+            for block in iter(lambda:stream.read(1048576),b''):
+                digest.update(block)
+        return digest.hexdigest()
+    evidence={name:file_digest(gr/name) for name in ('top.guide','bottom.guide','components.jsonl','hbt_assignment.tsv')}
+    (output/'guide_provenance.json').write_text(json.dumps(dict(source=str(gr),sha256=evidence,
+        openroad_binary_sha256=file_digest(exe)),indent=2)+'\n')
     report = {}
     if args.geometry_tool:
         tool=args.geometry_tool.resolve()
@@ -237,6 +248,7 @@ def main():
         else:
             report['joint_connectivity']='failed'
         report['passed']=report['passed'] and report['joint_connectivity']=='passed'
+    report['detail_wall_seconds']=time.perf_counter()-started
     (output/'report.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps(report))
     return 0 if report['passed'] else 1

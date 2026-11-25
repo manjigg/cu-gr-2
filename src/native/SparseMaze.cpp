@@ -3,7 +3,48 @@
 #include <queue>
 
 namespace native3d {
-bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
+namespace {
+class MazeWorkspace {
+    struct Label {
+        uint64_t generation=0;
+        double price=0;
+        GRPoint parent{0,0,0};
+        GREdgeType type=GREdgeType::WIRE;
+        int site=-1;
+    };
+    std::vector<Label> dense;
+    std::unordered_map<Resource,Label> sparse;
+    uint64_t generation=0;
+    bool direct=false;
+public:
+    void next(Resource gridSize,bool useDense) {
+        direct=useDense && gridSize<=400000;
+        ++generation;
+        if(!generation) {dense.clear();++generation;}
+        if(direct && dense.size()<gridSize) dense.resize(gridSize);
+        if(!direct) sparse.clear();
+    }
+    double distance(Resource id) const {
+        if(direct) {
+            const auto& label=dense[id];
+            if(label.generation==generation) return label.price;
+        } else {
+            const auto at=sparse.find(id);
+            if(at!=sparse.end()) return at->second.price;
+        }
+        return std::numeric_limits<double>::infinity();
+    }
+    void write(Resource id,double price,GRPoint parent,GREdgeType type=GREdgeType::WIRE,int site=-1) {
+        (direct?dense[id]:sparse[id])={generation,price,parent,type,site};
+    }
+    Edge back(Resource id,GRPoint point) const {
+        const auto& label=direct?dense[id]:sparse.at(id);
+        if(label.generation!=generation) throw std::logic_error("Stale maze predecessor");
+        return Edge(point,label.parent,label.type,label.site);
+    }
+};
+}
+bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) const {
     std::set<int> lines[2][2];
     auto mark=[&](GRPoint p) {
         lines[p.dieIdx][0].insert(p.x);
@@ -34,6 +75,12 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
         vertexIndex.insert({boostBox(q,q),int(indexPoints.size())});indexPoints.push_back(p);
     };
     indexVertex(tree.root);
+    const bool cached=graph.model.config.value("routing_mode",std::string("exact"))=="fast" &&
+                      graph.model.config.value("enable_maze_workspace",true);
+    thread_local MazeWorkspace workspace;
+    Demand treeDemand;
+    std::vector<int> chosenSites;
+    XY treeLow=graph.center(tree.root),treeHigh=treeLow;
     while(true) {
         time.check();
         std::set<GRPoint> targets;
@@ -82,11 +129,18 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
             for(int a:{0,1}) distance+=std::max<int64_t>({0,lo[a]-xy[a],xy[a]-hi[a]});
             return distance*graph.minimumCostPerBondDbu()+layerBound[graph.stateIndex(p)];
         };
+        auto inside=[&](GRPoint p) {
+            if(!bounded) return true;
+            const auto xy=graph.center(p);
+            const auto margin=int64_t(graph.model.units)*12;
+            for(unsigned a:{0,1})
+                if(xy[a]<std::min(lo[a],treeLow[a])-margin || xy[a]>std::max(hi[a],treeHigh[a])+margin) return false;
+            return true;
+        };
         using Item=std::tuple<double,double,GRPoint>;
         std::priority_queue<Item,std::vector<Item>,std::greater<Item>> queue;
-        std::map<GRPoint,double> distance;
-        std::map<GRPoint,Edge> back;
-        for(auto p:connected) {distance[p]=0;queue.emplace(remaining(p),0,p);}
+        workspace.next(graph.nodeCount(),cached);
+        for(auto p:connected) {workspace.write(graph.nodeId(p),0,p);queue.emplace(remaining(p),0,p);}
         bool reached=false,restart=false;
         while(!queue.empty()) {
             time.check();
@@ -94,19 +148,24 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
             queue.pop();
             const auto u=std::get<2>(current);
             const auto from=-std::get<1>(current);
-            if(from!=distance.at(u)) continue;
+            if(from!=workspace.distance(graph.nodeId(u))) continue;
             if(targets.count(u)) {
                 Edges path;
                 GRPoint v=u;
                 while(!connected.count(v)) {
-                    const auto& e=back.at(v);
+                    const auto e=workspace.back(graph.nodeId(v),v);
                     path.insert(e);
                     v=(v==e.a?e.b:e.a);
                 }
-                auto combined=tree.edges;
-                combined.insert(path.begin(),path.end());
+                Edges combined;
+                if(!cached) {
+                    combined=tree.edges;
+                    combined.insert(path.begin(),path.end());
+                }
                 // 单条边合法不保证整段路径的 Via 金属需求可容纳。
-                if(!graph.available(net,combined)) {
+                const bool valid=cached?graph.extendPath(net,path,tree.edges,treeDemand,chosenSites):
+                                        graph.available(net,combined);
+                if(!valid) {
                     Profile::retry();
                     Edges trial=tree.edges;
                     for(const auto& e:path) {
@@ -120,9 +179,16 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
                     break;
                 }
                 for(const auto& e:path) for(auto p:{e.a,e.b})
-                    if(connected.insert(p).second) indexVertex(p);
+                    if(connected.insert(p).second) {
+                        indexVertex(p);
+                        const auto xy=graph.center(p);
+                        for(unsigned axis:{0,1}) {
+                            treeLow[axis]=std::min(treeLow[axis],xy[axis]);
+                            treeHigh[axis]=std::max(treeHigh[axis],xy[axis]);
+                        }
+                    }
                 excluded.clear();
-                tree.edges.swap(combined);
+                if(!cached) tree.edges.swap(combined);
                 reached=true;break;
             }
             Profile::count(Event::MazeExpansions);
@@ -134,13 +200,14 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
                 } else if(e.type==GREdgeType::VIA &&
                     (!onLine(u.dieIdx,0,u.x)||!onLine(u.dieIdx,1,u.y))) continue;
                 auto v=(u==e.a?e.b:e.a);
-                if(connected.count(v) || excluded.count(e)) continue;
+                if(connected.count(v) || excluded.count(e) || !inside(v)) continue;
                 double step=graph.stepCost(net,e);
                 if(!std::isfinite(step)) continue;
                 double next=from+step;
-                auto old=distance.find(v);
-                if(old!=distance.end() && old->second<=next) continue;
-                distance[v]=next;back.erase(v);back.emplace(v,e);queue.emplace(next+remaining(v),-next,v);
+                const auto id=graph.nodeId(v);
+                if(workspace.distance(id)<=next) continue;
+                workspace.write(id,next,u,e.type,e.site);
+                queue.emplace(next+remaining(v),-next,v);
             }
         }
         if(restart) continue;
@@ -154,11 +221,14 @@ Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
     if(stride<1) throw std::invalid_argument("Sparse pitch must be positive");
     const auto& pins=graph.terminals(net);
     if(pins.empty()) throw std::invalid_argument("Empty net");
+    const auto& cfg=graph.model.config;
+    const bool window=cfg.value("routing_mode",std::string("exact"))=="fast" && cfg.value("enable_bounded_maze",true);
     while(true) {
         for(auto source:pins.front()) {
             Route tree{source,{}};
-            if(grow(tree,stride,allowDieDetour))
-                return {std::move(tree)};
+            if(window && grow(tree,stride,allowDieDetour,true)) return {std::move(tree)};
+            tree={source,{}};
+            if(grow(tree,stride,allowDieDetour,false)) return {std::move(tree)};
         }
         if(stride==1) return {};
         Profile::retry();
@@ -166,8 +236,13 @@ Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
     }
 }
 Routes SparseMaze::candidates(int stride,bool allowDieDetour) const {
-    const auto found=seed(stride,allowDieDetour);
+    auto found=seed(stride,allowDieDetour);
     if(found.empty()) return {};
-    return PatternSearch(graph,net,time).refineMaze(found.front());
+    try {return PatternSearch(graph,net,time).refineMaze(found.front());}
+    catch(const SearchTimeout&) {
+        if(graph.model.config.value("routing_mode",std::string("exact"))=="exact") throw;
+        Profile::retry();
+        return found;
+    }
 }
 }

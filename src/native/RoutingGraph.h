@@ -28,6 +28,11 @@ struct Route {
     GRPoint root;
     Edges edges;
 };
+struct PathQuality {
+    double cost=0,wire=0;
+    size_t vias=0;
+    std::vector<int> hbt;
+};
 class RoutingGraph;
 class RouteResourceSummary {
 public:
@@ -56,9 +61,12 @@ public:
     int cell(int d,int axis,int64_t local) const;
     XY center(GRPoint p) const;
     std::vector<Edge> seedLanding(int net,XY target,const Edges& chosen,const std::set<int>& excluded = {}) const;
+    std::vector<const Site*> sitesNearRegion(XY low,XY high,size_t count) const;
+    double singleHbtLowerBound(GRPoint a,GRPoint b,const Edge& landing) const;
     std::vector<Edge> neighbors(GRPoint p,int net) const;
     void validate(int net,const Route& route) const;
     bool available(int net,const Edges& edges) const;
+    bool evaluateCompact(int net,const std::vector<Edge>& edges,PathQuality& quality) const;
     double cost(const Edges& edges) const;
     // 对已由 neighbors() 给出的合法单位边，直接查询余量和静态价格。
     double stepCost(int net,const Edge&) const;
@@ -67,6 +75,9 @@ public:
     double capacity(Resource id) const;
     ResourceLocation location(Resource id) const;
     Resource resourceId(const Edge& edge) const;
+    Resource nodeId(GRPoint point) const {return pointId(point);}
+    Resource nodeCount() const {return volume;}
+    bool extendPath(int net,const Edges& path,Edges& tree,Demand& demand,std::vector<int>& hbt) const;
     PreparedRoute prepareRoute(int net,const Route& route) const;
     bool available(const RouteResourceSummary& prepared) const;
     void commitPrepared(int net,const PreparedRoute& prepared);
@@ -74,6 +85,9 @@ public:
     void commit(int net,const Route& route);
     void release(int net);
     const Occupancy& demand() const {return used;}
+    Resource hbtResource(int site) const {return siteId(site);}
+    std::vector<int> spacingNeighbors(int site) const;
+    void searchPrices(Occupancy prices) {dynamicPrice=std::move(prices);}
     const std::vector<std::vector<GRPoint>>& terminals(int net) const {return access.at(net);}
     const std::array<GridGraphView<bool>,2>& congestion() const { return congestionView; }
     void captureCongestion();
@@ -100,6 +114,7 @@ private:
     std::array<GridGraphView<bool>,2> congestionView;
     void publishDemand(const RouteResourceSummary& changed);
     Occupancy used;
+    Occupancy dynamicPrice;
     std::vector<PreparedRoute> owned;
     std::array<Resource,2> offsets{};
     Resource volume;
@@ -115,10 +130,12 @@ private:
     Resource siteId(int id) const {return 2*volume+static_cast<unsigned>(id);}
     Footprint landingFootprint(GRPoint p) const;
     unsigned countTracks(int die,int layer,int position) const;
-    bool collectHbtSites(int net,const Edges& edges,std::vector<int>& out) const;
+    template<class Range> Demand computeDemand(const Range&) const;
+    template<class Range> bool collectHbtSites(int net,const Range& edges,std::vector<int>& out) const;
     bool availableSites(const std::vector<int>& sites,const std::vector<int>* released=nullptr) const;
     double resourcePrice(Resource,double cap,double demand) const;
-    double baseCost(const Edges& edges,const Demand& demand) const;
+    double extraPrice(Resource id,double demand=1.) const;
+    template<class Range> double baseCost(const Range& edges,const Demand& demand) const;
     void validateConnectivity(int net,const Route& route) const;
 };
 }
