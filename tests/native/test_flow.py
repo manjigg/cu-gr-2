@@ -197,6 +197,9 @@ def regress(out):
     cfg['stages']=[3]
     maze=run(cfg,out/'maze-only')
     assert maze['metrics']['used_hbt']==2 and maze['stages'][0]['stage']==3
+    cfg.update(routing_mode='fast',stages=[1],seed_seconds=10)
+    rescue=run(cfg,out/'fast-rescue')
+    assert rescue['metrics']['used_hbt']==2 and rescue['stages'][0]['routed_nets']==2
     certificate=out/'no-site'/'reachability.json'
     proc=subprocess.run([binary,'-check-native',out/'no-site'/'manifest.json','-output',certificate],
                         stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)

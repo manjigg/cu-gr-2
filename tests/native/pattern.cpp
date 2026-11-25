@@ -35,6 +35,18 @@ int main(int argc,char** argv) {
     for(int n=0;n<int(model.nets.size());++n) pool.push_back(PatternSearch(graph,n,time).enumerate(false));
     const auto best=selectRoutes(graph,pool,time);
     if(best.status!="OPTIMAL" || best.objective!=8 || best.lower!=8) return 1;
+    for(int width:{4,8,16,32}) {
+        model.config["beam_width"]=width;
+        model.config["enable_path_cache"]=(width!=4);
+        model.config["enable_hbt_pruning"]=(width!=16);
+        std::vector<Routes> fast(pool.size());
+        for(int n=0;n<int(model.nets.size());++n) {
+            FastPatternCache cache;
+            fast[n]=PatternSearch(graph,n,time).enumerateFast(false,cache);
+        }
+        const auto evaluated=selectRoutes(graph,fast,time);
+        if(evaluated.status!="OPTIMAL" || evaluated.objective!=best.objective) return 1;
+    }
     for(int n=0;n<2;++n) graph.commit(n,pool[n].at(best.selection[n]));
     graph.captureCongestion();
     graph.release(1);

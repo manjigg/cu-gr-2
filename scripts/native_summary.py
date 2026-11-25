@@ -147,6 +147,8 @@ def detail_record(directory,case,global_dir,earlier):
         row[side+'_geometry']=res.get('geometry')
     if report:
         row['status']='PASSED' if passed==2 and report['passed'] else 'FAILED'
+        if earlier.get(case)=='FAILED' and not (job/'verified_report.json').is_file():
+            row['status']='FAILED'
     else:
         row['status']=earlier.get(case,'NOT_COMPLETED')
         if row['status']=='PASSED':

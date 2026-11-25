@@ -41,6 +41,26 @@ fast 保持统一资源图。Stage 1 局部初解由原 CUGR 模式 DP 生成，
 
 候选并行只在撤销后的同一分量快照中进行。工作线程只读统一账本，FLUTE LUT 在启动线程初始化，所有 FLUTE 访问受同一互斥锁保护。工作线程各自构造候选，主线程完成选择与事务发布。大例多线程仍受串行初解、输入和提交限制。内置独占计时是调度线程的时间，工作线程的任务时间涵盖在等待所在的作用域。
 
+## 七例全局布线实测
+
+七例使用一线程和统一参数。原版的实际进程墙钟从 2534.515 s 降至 470.529 s，为 5.387 倍加速和 81.44% 降幅。HBT 站点由 57459 减至 57314，普通 Via 从 4166247 减至 4153057，总全局线长由 11659499.145 µm 变为 11661185.445 µm（+0.0145%）。单例线长变化最大的是 BP（+0.0553%）。该表使用全局树的物理线长，详细布线另行统计。[正式总体结果](../../result-3/timeopt/summary.tsv) · [逐项对照](../../result-3/timeopt/comparison_native.tsv)
+
+| 模块 | 原始 inclusive s | 优化 inclusive s |
+|---|---:|---:|
+| 初始可行解 | 1677.820 | 160.211 |
+| HBT 搜索 | 1701.737 | 132.827 |
+| 资源摘要 | 159.046 | 37.089 |
+| 可用性检查 | 256.409 | 93.654 |
+| 模式 DP | 322.865 | 168.608 |
+| 主问题 | 352.023 | 3.776 |
+| Sparse Maze | 14.915 | 17.161 |
+| 提交 | 225.223 | 8.684 |
+| 释放 | 57.479 | 2.296 |
+
+原版大多在首个网的 HBT 路径枚举内超时，七例统计的有效 DP 合并只有 84 次。新版在相同全局阶段预算下生成约 335 万个中间标签，Beam 规约单桶峰值为 16。A* 扩展也由 176 万升为 484 万，因为更多网进入三维重布。可比较的加速来自减少每次站点搜索、资源摘要与全网重复提交开销，并改变阶段调度。HBT 计数统计访问的候选着陆，不测量 R-tree 内部遍历节点，全程计数因处理网数不同由 66.6 万升为 284.3 万。不同用途的 inclusive 时间存在嵌套关系。[时间分解](../../result-3/timeopt/runtime_breakdown.tsv)
+
+本机 H3D 发行二进制用同一组哈希校验后的 LEF/DEF 重跑，七例进程墙钟合计约 92.975 s。AES 中它报告 2254 个可用站点，当前显式阵列含 2601 个。不同的站点可用性以及论文的运行硬件，限制了 H3D 运行时间作为同协议对照的用途。论文表中的 WL 和 Via 与正式详细布线对照，局部测得的 H3D 全局 Wire 指标保留原归一化口径。[同机 H3D 日志](../../result-3/timeopt/_profiles/h3d_local/summary.tsv) · [H3D 论文](https://doi.org/10.1109/ICCAD66269.2025.11240944)
+
 ## 复现基线
 
 ```bash
@@ -50,3 +70,15 @@ ctest --test-dir build-timeopt --output-on-failure
 python3 scripts/native_bench.py build-timeopt/route tests/native/benchmark-array.json /tmp/native-profile-run --seed-seconds 1200 --stage-seconds 15 --master-seconds 15 --threads 1 --profile
 python3 scripts/native_profile.py /tmp/native-profile-run /tmp/native-profile-tables
 ```
+
+## 复现正式运行
+
+```bash
+python3 scripts/native_bench.py build-timeopt/route tests/native/benchmark-array.json /tmp/timeopt-routes --options tests/native/timeopt-options.json --seed-seconds 1200 --stage-seconds 15 --master-seconds 15 --threads 1 --profile
+python3 scripts/native_summary.py /tmp/timeopt-routes --replay build-timeopt/native_replay
+python3 scripts/native_detail_batch.py /home/wanghh/h3d/OpenROAD/bazel-bin/openroad /tmp/timeopt-routes /tmp/timeopt-drt /home/wanghh/h3d/OpenROAD/h3d_drt_validation/run_002 --jobs 3 --threads 8
+python3 scripts/native_summary.py /tmp/timeopt-routes --detail-dir /tmp/timeopt-drt
+python3 scripts/timeopt_experiments.py build-timeopt/route tests/native/benchmark-array.json tests/native/timeopt-options.json /tmp/timeopt-parallel --family parallel --cases aes ethmac ariane bp
+```
+
+正式归档的每个 case 都写入原始配置、进程记录、运行日志、三个阶段、逐网剖析和资源回放。详细布线在新目录中从该次 Guide、HBT 与局部分量生成 DEF，保留两侧运行日志、实际导体审计和联合连通性证据。[正式参数](../../tests/native/timeopt-options.json) · [全局文件来源](../../result-3/timeopt/run_provenance.json) · [详细布线总表](../../result-3/timeoptdetail/summary.tsv)

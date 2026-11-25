@@ -69,5 +69,26 @@ int main(int argc,char** argv) {
     rejects([&]{graph.commit(0,dup);});
     auto disconnected=a;disconnected.edges.clear();
     rejects([&]{graph.commit(0,disconnected);});
+    model.config["bonding"]["min_spacing"]=1500;
+    RoutingGraph spaced(model);
+    check(spaced.spacingNeighbors(0)==std::vector<int>{1});
+    spaced.commit(0,a);
+    rejects([&]{spaced.commit(1,b);});
+    spaced.release(0);
+    spaced.commit(1,b);spaced.release(1);
+    check(spaced.demand().empty());
+    model.config["bonding"]["min_spacing"]=1000;
+    for(auto& die:model.config["dies"]) die["via_capacity"]=1;
+    RoutingGraph viaLimit(model);
+    auto addVia=[](Route route) {
+        const auto p=route.root;
+        route.edges.emplace(p,GRPoint(p.dieIdx,p.layerIdx+1,p.x,p.y),GREdgeType::VIA);
+        return route;
+    };
+    viaLimit.commit(0,addVia(a));
+    rejects([&]{viaLimit.commit(1,addVia(b));});
+    viaLimit.release(0);
+    viaLimit.commit(1,addVia(b));viaLimit.release(1);
+    check(viaLimit.demand().empty());
     std::cout<<"PASS typed HBT, grid transforms, keepout, site ownership, via stack and rollback\n";
 }

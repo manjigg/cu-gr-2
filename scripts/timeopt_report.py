@@ -1,8 +1,10 @@
 """Generate scope-matched comparison tables from native runs and the published H3D row data."""
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
+import statistics
 
 from native_bench import CASES
 from native_profile import write_table
@@ -45,6 +47,59 @@ def comparison(case,old,new,scope):
         row[name+'_change_pct']=100*(b-a)/a if a and b is not None else None
     row['speedup']=old[-1]/new[-1] if old[-1] and new[-1] else None
     return row
+
+
+def case_comparison(before,after,detail=False):
+    scope='detailed_geometry_and_sum_of_die_wall_seconds' if detail else 'global_process_wall_seconds'
+    pairs=[(metrics(before.get(c,{}),detail),metrics(after.get(c,{}),detail)) for c in CASES]
+    table=[comparison(c,old,new,scope) for c,(old,new) in zip(CASES,pairs)]
+    def totals(index):
+        return tuple(sum(col) if all(value is not None for value in col) else None
+                     for col in zip(*(pair[index] for pair in pairs)))
+    table.append(comparison('TOTAL',totals(0),totals(1),scope))
+    return table
+
+
+def sha256(path):
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+        for data in iter(lambda:stream.read(1048576),b''):
+            digest.update(data)
+    return digest.hexdigest()
+
+
+def provenance(root,detail):
+    binary=root/'route'
+    if not binary.is_file():
+        return
+    global_runs={}
+    detail_runs={}
+    for case in CASES:
+        job=root/case
+        manifest=job/'manifest.json'
+        if not manifest.is_file():
+            continue
+        data=json.loads(manifest.read_text())
+        names=('top.guide','bottom.guide','route_edges.tsv','hbt_assignment.tsv','components.jsonl','routing_statistics.json')
+        global_runs[case]=dict(manifest_sha256=sha256(manifest),
+            input_sha256=data['provenance']['input_sha256'],
+            outputs={f:sha256(job/'output'/f) for f in names if (job/'output'/f).is_file()})
+        end=detail/case
+        files=('top/routed.def','bottom/routed.def','report.json','verified_report.json','joint_geometry.json')
+        if end.is_dir():
+            source_path=end/'guide_provenance.json'
+            source=json.loads(source_path.read_text()) if source_path.is_file() else None
+            if source and any(global_runs[case]['outputs'][name]!=value for name,value in source['sha256'].items()):
+                raise ValueError('DRT was run with different global guides or landing endpoints for '+case)
+            detail_runs[case]=dict(guide_provenance=source,
+                outputs={f:sha256(end/f) for f in files if (end/f).is_file()})
+    record=dict(executable_sha256=sha256(binary),cases=global_runs)
+    revision=root/'code_revision.txt'
+    if revision.exists():
+        record['router_source_commit']=revision.read_text().strip()
+    (root/'run_provenance.json').write_text(json.dumps(record,indent=2)+'\n')
+    if detail_runs:
+        (detail/'run_provenance.json').write_text(json.dumps(detail_runs,indent=2)+'\n')
 
 
 def render_summary(root,fields,title):
@@ -104,6 +159,23 @@ def experiment_tables(root):
                     dp_labels=counters.get('dp_labels_generated'),hbt_sites_visited=counters.get('hbt_sites_visited')))
         if table:
             write_table(root/name,table)
+    runs=[root,*sorted((root/'_repeats').glob('*/'))]
+    samples=[]
+    for case in CASES:
+        times=[]
+        trial_count=0
+        for run in runs:
+            result=rows(run/'summary.tsv').get(case)
+            if result is not None:
+                trial_count+=1
+                if result.get('exit_code')=='0' and result.get('wall_seconds'):
+                    times.append(float(result['wall_seconds']))
+        if times:
+            samples.append(dict(benchmark=case,total_observations=trial_count,successful=len(times),
+                median_wall_seconds=statistics.median(times),min_wall_seconds=min(times),max_wall_seconds=max(times),
+                peak_to_peak_seconds=max(times)-min(times),wall_samples_seconds=','.join(str(x) for x in times)))
+    if samples:
+        write_table(root/'repeat_summary.tsv',samples)
 
 
 def generate(root,detail,native_detail):
@@ -111,8 +183,7 @@ def generate(root,detail,native_detail):
     optimized=rows(root/'summary.tsv')
     h3d=rows(root/'_profiles/h3d_local/summary.tsv')
     if optimized:
-        write_table(root/'comparison_native.tsv',[comparison(c,metrics(original.get(c,{})),
-            metrics(optimized.get(c,{})),'global_process_wall_seconds') for c in CASES])
+        write_table(root/'comparison_native.tsv',case_comparison(original,optimized))
         if h3d:
             reference=[dict(benchmark=c,h3d_local_threads=h3d[c]['threads'],h3d_local_wall_seconds=h3d[c]['wall_seconds'],
                       h3d_local_wire_metric=h3d[c]['wirelength_h3d_metric'],h3d_local_via_count=h3d[c]['via_count'],
@@ -125,11 +196,11 @@ def generate(root,detail,native_detail):
                              'wall_seconds','max_rss_kb','unconnected_nets'],'# TimeOpt Native 总体布线')
     experiment_tables(root)
     new=rows(detail/'summary.tsv')
+    provenance(root,detail)
     if not new:
         return
     old=rows(native_detail/'summary.tsv')
-    write_table(detail/'comparison_native.tsv',[comparison(c,metrics(old.get(c,{}),True),
-        metrics(new.get(c,{}),True),'detailed_geometry_and_sum_of_die_wall_seconds') for c in CASES])
+    write_table(detail/'comparison_native.tsv',case_comparison(old,new,detail=True))
     refs=[]
     all_rows=[]
     for case in CASES:
