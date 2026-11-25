@@ -34,3 +34,16 @@ M1 的空间查询、缓存与差量更新保留原硬约束和候选几何。Re
 | tests/native/pattern.cpp、test_flow.py | 覆盖局部联合选择优于争用贪心、候选与外部资源同时可行、fast 初解与回滚、原有三 HBT 及跨 Die 绕行。 |
 
 早期快速样本保留 BP FLUTE 整数范围失败。后续将高扇出网交给保持端点身份的分簇初解、合法分支修复和迷宫回退。投影 DP 处理其数值范围覆盖的网络。[原始失败输出](../../result-3/timeopt/_ablation/v5/bp/router.log)
+
+## M7–M9
+
+| 文件与函数 | 修改与验收 |
+|---|---|
+| src/native/FluteAccess.h、src/gr/PatternRoute.cpp、src/native/PatternSearch.cpp | 原 FLUTE 查找表由主线程初始化。二维及原生三维入口共用锁保护 C 内核 |
+| src/native/IncrementalRoute.cpp 的 optimizeConflicts | 已撤销的局部分量可并行生成候选。每个任务有独立路径缓存。全部任务完成后，串行精确选择与账本发布 |
+| scripts/native_bench.py、scripts/timeopt_experiments.py | 固定实验协议，基准、正式、消融、参数、重复和线程实验各有独立目录。保留实际时限与失败状态 |
+| scripts/native_detail.py、scripts/native_detail_batch.py | 写入实际来源 Guide/分量/HBT 的 SHA-256 和当前下游二进制哈希，记录详细阶段墙钟时间，另行执行物理导体复查 |
+| scripts/native_summary.py、scripts/timeopt_report.py、scripts/timeopt_plot.py | 从进程、资源回放、几何及原始日志生成汇总与可复核对比，区分论文时间、全局进程时间和详细布线时间 |
+| tests/native/timeopt-options.json | 保存七例使用的统一 fast 参数，复用原始实验的 HBT 物理协议和基础目标权重 |
+
+七例总体布线正式单线程墙钟为 470.529 s，原版为 2534.515 s。触发更多跨 Die 重布后，HBT 搜索、资源摘要及主问题 inclusive 时间分别为 132.827、37.089 和 3.776 s，旧版分别为 1701.737、159.046 和 352.023 s。完整报告包括这三项的非重叠测量和独立消融。[性能剖析](timeopt.md)
