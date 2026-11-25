@@ -4,6 +4,7 @@ import concurrent.futures
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -74,7 +75,10 @@ def main():
     parser.add_argument('references', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--stage-seconds', type=float, default=60)
+    parser.add_argument('--master-seconds', type=float, help='Master selection time limit, defaulting to the stage limit')
     parser.add_argument('--seed-seconds', type=float, default=60)
+    parser.add_argument('--threads', type=int, default=1, help='Number of requested routing threads')
+    parser.add_argument('--profile',action='store_true',help='Record nested C++ module times and the 100 slowest nets')
     parser.add_argument('--cases', nargs='+', choices=CASES, default=CASES)
     parser.add_argument('--jobs', type=int, default=1)
     args = parser.parse_args()
@@ -88,13 +92,20 @@ def main():
         source = args.references if args.references.is_file() else args.references/case/'f2f.json'
         manifest = design_manifest(source.resolve(), args.stage_seconds,case)
         manifest['seed_seconds'] = args.seed_seconds
+        manifest['master_seconds'] = args.master_seconds if args.master_seconds is not None else args.stage_seconds
+        manifest['provenance'].update(profile=args.profile,requested_threads=args.threads)
         config = job/'manifest.json'
         config.write_text(json.dumps(manifest, separators=(',', ':')))
         start = time.monotonic()
         with (job/'router.log').open('w') as log:
+            env = os.environ.copy()
+            if args.profile:
+                env['CUGR_NATIVE_PROFILE']='1'
+            else:
+                env.pop('CUGR_NATIVE_PROFILE',None)
             proc = subprocess.run(['/usr/bin/time', '-f', '%M', '-o', str(job/'rss.kb'),
-                                   binary, '-native', config, '-output', job/'output'],
-                                  cwd=binary.parent, stdout=log, stderr=subprocess.STDOUT)
+                                   binary, '-native', config, '-output', job/'output', '-threads',str(args.threads)],
+                                  cwd=job, env=env, stdout=log, stderr=subprocess.STDOUT)
         elapsed = time.monotonic()-start
         stats_path = job/'output/routing_statistics.json'
         stats = json.loads(stats_path.read_text()) if stats_path.exists() else {}
@@ -107,6 +118,9 @@ def main():
                     used_hbt=metrics.get('used_hbt'), wire_overflow=metrics.get('wire_overflow'), drc=None,
                     wall_seconds=round(elapsed, 3), max_rss_kb=(job/'rss.kb').read_text().splitlines()[-1])
         (job/'process.json').write_text(json.dumps(record,indent=2)+'\n')
+        if args.profile and proc.returncode in (0,2):
+            for name in ('profile.json','slow_nets.tsv'):
+                (job/'output'/name).rename(job/name)
         return record
 
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool, (out/'summary.tsv').open('w') as stream:

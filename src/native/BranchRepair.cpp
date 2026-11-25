@@ -1,4 +1,5 @@
 #include "BranchRepair.h"
+#include "Profile.h"
 #include <queue>
 namespace native3d {
 namespace {
@@ -18,6 +19,7 @@ public:
 }
 Routes repairLocalBranches(const RoutingGraph& graph,int net,const Route& candidate,
                           const std::set<GRPoint>& required,const Deadline& deadline) {
+    Measured measured(Timing::BranchRepair);
     Forest forest;
     Edges selected;
     Demand inside;

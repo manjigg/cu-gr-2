@@ -3,6 +3,7 @@
 #include "GuideOutput.h"
 #include "SparseMaze.h"
 #include "SeedTopology.h"
+#include "Profile.h"
 #include <boost/filesystem.hpp>
 #include <sys/resource.h>
 
@@ -30,7 +31,12 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
     Json report;
     report["inventory"]=model.inventory();
     report["metrics"]=nullptr;report["detailed_drc"]=nullptr;
-    RoutingGraph graph(model);
+    auto initialize=[&]() {
+        Measured measured(Timing::Initialization);
+        return RoutingGraph(model);
+    };
+    RoutingGraph graph=initialize();
+    if(auto* profile=Profile::current()) profile->prepareNets(model.nets.size());
     // FLUTE C 内核按工作目录读取表。在单线程初始化期间切到随构建提供的表目录。
     auto working=fs::current_path();
     if(!fs::exists("POWV9.dat") || !fs::exists("POST9.dat")) {
@@ -47,6 +53,7 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
     std::vector<int> committed;
     const double seedSeconds=model.config.value("seed_seconds",0.);
     if(seedSeconds>0) {
+        Measured measured(Timing::Seed);
         Deadline seedTime(seedSeconds);
         const int stride=model.config.value("sparse_stride",4);
         std::vector<int> order;
@@ -60,9 +67,14 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
         try {
             for(int n:order) {
                 seedTime.check();++attempted;
+                MeasuredNet measureNet(n,NetMethod::Seed);
                 const auto started=Clock::now();
                 auto r=initialCandidates(graph,n,seedTime);
-                if(r.empty()) r=SparseMaze(graph,n,seedTime).seed(stride,false);
+                if(r.empty()) {
+                    Profile::retry();
+                    MeasuredNet mazeNet(n,NetMethod::Maze);
+                    r=SparseMaze(graph,n,seedTime).seed(stride,false);
+                }
                 const double elapsed=std::chrono::duration<double>(Clock::now()-started).count();
                 if(elapsed>=1. || r.empty())
                     std::cout<<"NATIVE_SEED_NET "<<n<<" pins="<<graph.terminals(n).size()
@@ -95,6 +107,7 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
         }
     }
     for(int stage:stages) {
+        Measured stageProfile(stage==1?Timing::Stage1:stage==2?Timing::Stage2:Timing::Stage3);
         auto start=Clock::now();
         Deadline limit(model.config.value("stage_seconds",60.0));
         Json rec;
@@ -108,7 +121,9 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
         for(size_t i=0;i<saved.size();++i) graph.release(i);
         try {
             try {
+                Measured generation(Timing::Candidates);
                 for(size_t i=0;i<pool.size();++i) {
+                    MeasuredNet measureNet(i,stage==1?NetMethod::Pattern:stage==2?NetMethod::Detour:NetMethod::Maze);
                     limit.check();
                     Routes extra;
                     if(stage==3) extra=SparseMaze(graph,i,limit).candidates(
@@ -153,7 +168,11 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
         report["stages"].push_back(rec);
         std::cout<<"NATIVE_STAGE "<<rec.dump()<<std::endl;
     }
-    if(!incumbent.empty()) report["metrics"]=writeSolution(graph,incumbent,output);
+    if(!incumbent.empty()) {
+        Measured outputTimer(Timing::Output);
+        report["metrics"]=writeSolution(graph,incumbent,output);
+    }
+    if(auto* profile=Profile::current()) profile->describeNets(model,graph,incumbent);
     report["status"]=incumbent.empty()?(allFinished?"INFEASIBLE_CANDIDATE_POOL":"NO_INCUMBENT_TIME_LIMIT"):
                        (allFinished?"OPTIMAL_CANDIDATE_POOL":"FEASIBLE_TIME_LIMIT");
     report["routing_seconds"]=std::chrono::duration<double>(Clock::now()-begin).count();

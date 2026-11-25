@@ -1,4 +1,16 @@
 #include "PatternRoute.h"
+#ifdef CUGR_NATIVE_3D
+#include "native/Profile.h"
+#endif
+
+namespace {
+Tree buildFlute(int degree, DTYPE* xs, DTYPE* ys) {
+#ifdef CUGR_NATIVE_3D
+    native3d::Measured measured(native3d::Timing::Flute);
+#endif
+    return flute(degree, xs, ys, ACCURACY);
+}
+}
 
 void SteinerTreeNode::preorder(
     std::shared_ptr<SteinerTreeNode> node, 
@@ -67,7 +79,7 @@ void PatternRoute::constructSteinerTree() {
             ys[i] = accessPoint.second.first.y;
             i++;
         }
-        Tree flutetree = flute(degree, xs, ys, ACCURACY);
+        Tree flutetree = buildFlute(degree, xs, ys);
         std::unique_ptr<Branch,decltype(&free)> branchMemory(flutetree.branch,free);
         const int numBranches = degree + degree - 2;
         vector<utils::PointT<int>> steinerPoints;
@@ -222,7 +234,7 @@ void PatternRoute::constructRoutingDAG() {
             ys[i] = accessPoint.second.first.y;
             i++;
         }
-        Tree flutetree = flute(degree, xs, ys, ACCURACY);
+        Tree flutetree = buildFlute(degree, xs, ys);
         std::unique_ptr<Branch,decltype(&free)> branchMemory(flutetree.branch,free);
         const int numBranches = degree + degree - 2;
         vector<utils::PointT<int>> steinerPoints;
@@ -552,6 +564,9 @@ void PatternRoute::constructDetours(const GridGraphView<bool>& congestionView) {
 }
 
 void PatternRoute::run() {
+#ifdef CUGR_NATIVE_3D
+    native3d::Measured measured(native3d::Timing::PatternDP);
+#endif
     calculateRoutingCosts(routingDag);
     net.setRoutingTree(getRoutingTree(routingDag));
 }

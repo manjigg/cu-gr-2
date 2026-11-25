@@ -1,4 +1,5 @@
 #include "SparseMaze.h"
+#include "Profile.h"
 #include <queue>
 
 namespace native3d {
@@ -106,6 +107,7 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
                 combined.insert(path.begin(),path.end());
                 // 单条边合法不保证整段路径的 Via 金属需求可容纳。
                 if(!graph.available(net,combined)) {
+                    Profile::retry();
                     Edges trial=tree.edges;
                     for(const auto& e:path) {
                         trial.insert(e);
@@ -123,6 +125,7 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
                 tree.edges.swap(combined);
                 reached=true;break;
             }
+            Profile::count(Event::MazeExpansions);
             for(const auto& e:graph.neighbors(u,net)) {
                 if(e.type==GREdgeType::HBT && !cross && !allowDieDetour) continue;
                 if(e.type==GREdgeType::WIRE) {
@@ -147,6 +150,7 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour) const {
     return true;
 }
 Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
+    Measured measured(Timing::Maze);
     if(stride<1) throw std::invalid_argument("Sparse pitch must be positive");
     const auto& pins=graph.terminals(net);
     if(pins.empty()) throw std::invalid_argument("Empty net");
@@ -157,6 +161,7 @@ Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
                 return {std::move(tree)};
         }
         if(stride==1) return {};
+        Profile::retry();
         stride=std::max(1,stride/2);
     }
 }

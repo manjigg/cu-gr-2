@@ -1,4 +1,5 @@
 #include "MultiDieDesign.h"
+#include "Profile.h"
 #include <boost/filesystem.hpp>
 
 namespace native3d {
@@ -40,9 +41,13 @@ XY DieTransform::local(XY q) const {
 static std::string resolve(const std::string& base,const Json& item) {
     return boost::filesystem::absolute(item.get<std::string>(),base).string();
 }
+static GridGraph initializeGrid(const Design& design,const Parameters& parameters) {
+    Measured measured(Timing::Initialization);
+    return GridGraph(design,parameters);
+}
 DieDesign::DieDesign(const Parameters& p,const Json& j,const std::string& base,int units)
     : design(Design::importDie(p,resolve(base,j.at("lef")),resolve(base,j.at("def")))),
-      grid(*design,p),transform(j.at("transform"),units,design->getLibDBU()) {
+      grid(initializeGrid(*design,p)),transform(j.at("transform"),units,design->getLibDBU()) {
     for (const auto& n:design->getAllNets())
         if (!names.emplace(n.getName(),n.getIndex()).second) throw std::invalid_argument("Duplicate local net");
 }

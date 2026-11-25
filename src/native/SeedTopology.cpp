@@ -1,5 +1,6 @@
 #include "SeedTopology.h"
 #include "MedianRegion.h"
+#include "Profile.h"
 #include <numeric>
 
 namespace native3d {
@@ -18,6 +19,7 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
     PatternSearch pattern(graph,net,time);
     if(graph.model.nets[net].localNet[0]<0 || graph.model.nets[net].localNet[1]<0)
         return pattern.localSeed();
+    Measured measured(Timing::CrossDieSeed);
     std::vector<XY> xy;
     for(const auto& p:pins) xy.push_back(graph.center(p.front()));
     Routes candidates;
@@ -99,6 +101,7 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
         std::set<int> excluded{h.front().site};
         while(std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count()<budget) {
             time.check();
+            Profile::retry();
             auto next=graph.seedLanding(net,region.high,{},excluded);
             if(next.empty()) break;
             excluded.insert(next.front().site);

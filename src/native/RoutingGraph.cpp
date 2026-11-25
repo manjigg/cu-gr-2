@@ -1,4 +1,5 @@
 #include "RoutingGraph.h"
+#include "Profile.h"
 #include <cmath>
 
 namespace native3d {
@@ -152,10 +153,12 @@ bool RoutingGraph::allowed(int net,const Edge& e) const {
         e.a[1-dir]==e.b[1-dir];
 }
 std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chosen,const std::set<int>& excluded) const {
+    Measured measured(Timing::HbtSearch);
     // 只给初解选择最近可用站点。精确 DP 独立枚举全阵列。
     if(siteIndex.empty()) return {};
     boostPoint point(target[0],target[1]);
     for(auto it=siteIndex.qbegin(bgi::nearest(point,siteIndex.size()));it!=siteIndex.qend();++it) {
+        Profile::count(Event::HbtSites);
         if(excluded.count(it->second)) continue;
         for(const auto& h:sites.at(it->second).transitions) {
             Edges test=chosen;test.insert(h);
@@ -183,6 +186,7 @@ double RoutingGraph::wireUm(const Edge& e) const {
     return double(g.getEdgeLength(dir,e.a[dir]))/g.getLibDBU();
 }
 Demand RoutingGraph::resources(const Edges& edges) const {
+    Measured measured(Timing::Resources);
     Demand res;
     for(const auto& e:edges) {
         res[key(e)]=res[key(e)]+1;
@@ -204,6 +208,7 @@ Demand RoutingGraph::resources(const Edges& edges) const {
     return res;
 }
 double RoutingGraph::capacity(const Resource& id) const {
+    Measured measured(Timing::Capacity);
     auto d=std::get<1>(id), l=std::get<2>(id), x=std::get<3>(id), y=std::get<4>(id);
     switch(std::get<0>(id)) {
     case GREdgeType::HBT: return sites.at(x).capacity;
@@ -230,6 +235,7 @@ double RoutingGraph::capacity(const Resource& id) const {
     }
 }
 bool RoutingGraph::available(int net,const Edges& edges) const {
+    Measured measured(Timing::Available);
     std::set<int> chosen;
     for(const auto& e:edges) {
         if(!allowed(net,e)) return false;
@@ -250,6 +256,7 @@ bool RoutingGraph::available(int net,const Edges& edges) const {
     return true;
 }
 double RoutingGraph::cost(const Edges& edges) const {
+    Measured measured(Timing::Cost);
     double value=0;
     for(const auto& e:edges)
         value+=e.type==GREdgeType::WIRE?wireWeight*wireUm(e):e.type==GREdgeType::VIA?viaWeight:hbtWeight;
@@ -271,6 +278,7 @@ double RoutingGraph::resourcePrice(const Resource& id,double cap,double demand) 
     return value;
 }
 double RoutingGraph::stepCost(int net,const Edge& edge) const {
+    Measured measured(Timing::StepCost);
     const auto inf=std::numeric_limits<double>::infinity();
     if(edge.type==GREdgeType::HBT) return available(net,{edge})?cost({edge}):inf;
     const auto& die=*model.dies[edge.a.dieIdx];
@@ -298,6 +306,7 @@ double RoutingGraph::stepCost(int net,const Edge& edge) const {
     return total;
 }
 void RoutingGraph::validate(int net,const Route& route) const {
+    Measured measured(Timing::Validate);
     if(!validPoint(route.root)||!available(net,route.edges)) throw std::invalid_argument("Infeasible route resources");
     std::map<GRPoint,std::vector<GRPoint>> adj;
     for(const auto& e:route.edges){adj[e.a].push_back(e.b);adj[e.b].push_back(e.a);}
@@ -316,6 +325,7 @@ void RoutingGraph::validate(int net,const Route& route) const {
             throw std::invalid_argument("Fixed site missing");
 }
 void RoutingGraph::commit(int net,const Route& route) {
+    Measured measured(Timing::Commit);
     if(owned.count(net)) throw std::logic_error("Double commit");
     validate(net,route);
     auto delta=resources(route.edges);
@@ -335,6 +345,7 @@ void RoutingGraph::commit(int net,const Route& route) {
     publishDemand(changed.first->second);
 }
 void RoutingGraph::release(int net) {
+    Measured measured(Timing::Release);
     auto owner=owned.find(net);
     if(owner==owned.end()) throw std::logic_error("Release by non-owner");
     for(const auto& r:owner->second) {
