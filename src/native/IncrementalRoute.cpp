@@ -6,6 +6,7 @@
 #include "SeedTopology.h"
 #include "SparseMaze.h"
 #include "TopologyRefinement.h"
+#include "TopologyExchange.h"
 #include "FailureRepair.h"
 #include <future>
 #include <numeric>
@@ -63,6 +64,39 @@ bool IncumbentSolution::replace(int net,unsigned version,Route&& route,PreparedR
     ++entry.version;
     return true;
 }
+bool IncumbentSolution::replaceJoint(const std::vector<int>& ids,const std::vector<unsigned>& versions,
+                                    std::vector<Route>& routes,const std::vector<PreparedRoute>& summaries) {
+    if(ids.size()<2 || ids.size()!=versions.size() || ids.size()!=routes.size() || ids.size()!=summaries.size())
+        throw std::invalid_argument("Invalid incumbent transaction");
+    if(!std::is_sorted(ids.begin(),ids.end()) || std::adjacent_find(ids.begin(),ids.end())!=ids.end())
+        throw std::invalid_argument("Joint transaction requires unique ordered nets");
+    if(mode=="baseline") throw std::logic_error("Joint transaction requires joint or budgeted mode");
+    size_t outside=hbtTotal,total=0;
+    long double before=0,after=0;
+    for(size_t i=0;i<ids.size();++i) {
+        const auto& previous=current.at(ids[i]);
+        if(previous.version!=versions[i] || !previous.summary || !summaries[i]) return false;
+        outside-=previous.summary->hbtSites().size();
+        total+=summaries[i]->hbtSites().size();
+        before+=previous.summary->cost();
+        after+=summaries[i]->cost();
+    }
+    total+=outside;
+    if(excess(total)>excess(hbtTotal) || (excess(total)==excess(hbtTotal) && after+1e-9L>=before)) return false;
+    if(!graph.replaceGroup(ids,summaries)) return false;
+    // 所有可能分配内存的候选和索引已准备完毕。提交后仅发布无分配的上层状态。
+    hbtTotal=total;
+    for(size_t i=0;i<ids.size();++i) {
+        auto& previous=current[ids[i]];
+        if(previous.summary==summaries[i]) continue;
+        previous.route.edges.swap(routes[i].edges);
+        previous.route.root=routes[i].root;
+        previous.summary=summaries[i];
+        ++previous.version;
+        previous.failures=0;
+    }
+    return true;
+}
 Json IncumbentSolution::metrics() const {
     double objective=0,length=0;
     size_t vias=0,hbt=0,connected=0;
@@ -110,7 +144,8 @@ std::vector<int> initialOrder(const RoutingGraph& g,const std::string& mode) {
     } else if(mode!="input") throw std::invalid_argument("Unknown seed order: "+mode);
     return order;
 }
-Json optimizeConflicts(IncumbentSolution& solution) {
+Json optimizeConflicts(IncumbentSolution& solution,const Deadline* parent=nullptr,
+                       std::vector<std::vector<int>>* suppliedGroups=nullptr) {
     Measured solveTime(Timing::Conflict);
     auto& graph=solution.graph;
     const auto& cfg=graph.model.config;
@@ -119,15 +154,17 @@ Json optimizeConflicts(IncumbentSolution& solution) {
     const double step=cfg.value("pricing_step",0.5);
     if(!std::isfinite(step) || step<0) throw std::invalid_argument("Invalid resource price step");
     const auto seconds=cfg.value("master_seconds",cfg.value("stage_seconds",15.));
-    Deadline budget(seconds);
+    Deadline budget=parent?Deadline(*parent,seconds):Deadline(seconds);
     std::vector<std::vector<PreparedRoute>> choices(solution.current.size());
     for(size_t id=0;id<solution.current.size();++id) {
+        if(parent && budget.expired()) return {{"phase_timeout",true},{"workers",1}};
         const auto& old=solution.current[id];
         if(!old.summary) continue;
         choices[id].push_back(old.summary);
         for(const auto& route:old.alternatives) choices[id].push_back(graph.prepareRoute(id,route));
     }
     const auto conflict=buildConflictGroups(graph,choices,maxGroup,step);
+    if(suppliedGroups) *suppliedGroups=conflict.groups;
     if(cfg.value("enable_dynamic_pricing",true)) graph.searchPrices(conflict.prices);
     size_t changed=0,attempted=0,completed=0,visited=0;
     size_t regenerated=0,maxWorkers=1;
@@ -151,7 +188,8 @@ Json optimizeConflicts(IncumbentSolution& solution) {
                     auto calculate=[&](size_t i) {
                         const int id=ids[i];
                         if(graph.terminals(id).size()>16) return;
-                        Deadline search(cfg.value("net_seconds",0.03));
+                        const auto netTime=cfg.value("net_seconds",0.03);
+                        Deadline search=parent?Deadline(budget,netTime):Deadline(netTime);
                         try {
                             FastPatternCache cache;
                             produced[i]=PatternSearch(graph,id,search).enumerateFast(false,cache);
@@ -187,7 +225,7 @@ Json optimizeConflicts(IncumbentSolution& solution) {
                         }
                     }
                 }
-                Deadline subproblem(std::min(seconds,0.1));
+                Deadline subproblem=parent?Deadline(budget,std::min(seconds,0.1)):Deadline(std::min(seconds,0.1));
                 size_t outside=solution.hbtTotal;
                 for(int id:ids) outside-=solution.current[id].summary->hbtSites().size();
                 const size_t room=solution.budget>outside?solution.budget-outside:0;
@@ -223,6 +261,12 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
     const auto& cfg=graph.model.config;
     IncumbentSolution incumbent(graph);
     const bool fromCheckpoint=cfg.count("load_maze_checkpoint");
+    const bool stage2Replay=cfg.count("load_stage2_checkpoint");
+    if(stage2Replay) {
+        if(fromCheckpoint || stages!=std::vector<int>{2})
+            throw std::invalid_argument("Stage 2 replay requires stages=[2]");
+        loadStage2Checkpoint(incumbent,cfg.at("load_stage2_checkpoint").get<std::string>());
+    }
     std::vector<std::pair<double,int>> frozenOrder;
     if(fromCheckpoint) {
         if(stages!=std::vector<int>{3}) throw std::invalid_argument("Maze replay requires stages=[3]");
@@ -234,6 +278,11 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
     const double seedSeconds=cfg.value("seed_seconds",1200.);
     const double stageSeconds=cfg.value("stage_seconds",15.);
     const double netSeconds=cfg.value("net_seconds",0.03);
+    const bool coordinated=cfg.value("enable_topology_coordination",false);
+    if(coordinated && incumbent.mode=="baseline") throw std::invalid_argument("Topology coordination requires joint or budgeted mode");
+    for(const auto option:{"enable_topology_archive","enable_topology_exchange","enable_topology_safe_pruning",
+                           "enable_topology_group_regeneration","enable_topology_budget_exchange","enable_topology_rotation"})
+        if(cfg.value(option,false) && !coordinated) throw std::invalid_argument(std::string(option)+" requires topology coordination");
     const auto selectedOrder=cfg.value("seed_order",std::string("local_first"));
     const auto order=initialOrder(graph,selectedOrder);
     report["algorithm"]={{"routing_mode","fast"},{"seed_order",selectedOrder},{"net_seconds",netSeconds}};
@@ -241,11 +290,15 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
     report["bound_scope"]="local_candidate_updates";
     report["unrestricted_optimality_gap"]=nullptr;
     for(int stage:stages) {
+        if(stage==2 && cfg.value("save_stage2_checkpoint",false)) {
+            if(stage2Replay || stages.front()!=1) throw std::invalid_argument("Stage 2 snapshot requires a fresh Stage 1");
+            saveStage2Checkpoint(incumbent,outputDirectory+"/stage2.checkpoint");
+        }
         Measured stageTime(stage==1?Timing::Stage1:stage==2?Timing::Stage2:Timing::Stage3);
         const auto start=Clock::now();
         size_t attempted=0,completed=0,accepted=0,restored=0,timedOut=0,candidateCount=0;
         bool stageLimit=false;
-        Json conflict=nullptr,parallelMaze=nullptr;
+        Json conflict=nullptr,parallelMaze=nullptr,exchange=nullptr;
         uint64_t serialExpansions=0,serialRefineTimeouts=0;
         double serialSearch=0;
         std::map<std::string,TopologyStats> topologyStats;
@@ -287,8 +340,12 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
             report["seed_attempted"]=attempted;
             report["seed_feasible_nets"]=accepted;
         } else {
+            std::unique_ptr<Deadline> stageParent;
+            std::vector<std::vector<int>> legacyGroups;
             if(stage==2) {
-                if(cfg.value("enable_conflict_optimizer",true)) conflict=optimizeConflicts(incumbent);
+                const bool conflictEnabled=cfg.value("enable_conflict_optimizer",true);
+                if(coordinated) stageParent.reset(new Deadline(stageSeconds+(conflictEnabled?cfg.value("master_seconds",stageSeconds):0.)));
+                if(conflictEnabled) conflict=optimizeConflicts(incumbent,stageParent.get(),coordinated?&legacyGroups:nullptr);
                 graph.captureCongestion();
             }
             std::vector<std::pair<double,int>> priority;
@@ -307,7 +364,9 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                     priority.emplace_back(-1000.-current.summary->hbtSites().size(),id);
                     continue;
                 }
-                if(stage==2 && (cross || pressure>=0.85 || hasAlternative)) {
+                const bool augmentation=stage==2 && coordinated && cfg.value("enable_topology_refinement",false) &&
+                    cfg.value("enable_hbt_augmentation",false) && current.summary->wirelength()>0;
+                if(stage==2 && (cross || pressure>=0.85 || hasAlternative || augmentation)) {
                     const double fastNet=pins<=8?8.:0.;
                     priority.emplace_back(-(10*pressure+std::min<size_t>(8,current.summary->hbtSites().size())+hasAlternative+fastNet),id);
                 }
@@ -340,7 +399,16 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                 report["maze_memory_policy"]={{"rss_before_stage3_kb",usage.ru_maxrss},{"worker_reserve_kb",reserve},
                     {"fraction",fraction},{"worker_limit",workers},{"serial_fallback",serialMemory}};
             }
-            if(parallel && !serialMemory) {
+            if(stageParent) {
+                auto run=runTopologyExchange(incumbent,priority,legacyGroups,*stageParent,netSeconds,stride,outputDirectory,topologyStats);
+                attempted=run.attempted;
+                completed=run.completed;
+                accepted=run.accepted;
+                timedOut=run.timedOut;
+                candidateCount=run.candidates;
+                exchange=std::move(run.statistics);
+                stageLimit=stageParent->expired();
+            } else if(parallel && !serialMemory) {
                 parallelMaze=routeMazeBatches(incumbent,priority,budget,stride,netSeconds,workers);
                 attempted=parallelMaze.at("maze_tasks").get<size_t>();
                 accepted=parallelMaze.at("accepted").get<size_t>();
@@ -459,6 +527,7 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
         if(!parallelMaze.is_null()) result["parallel_maze"]=std::move(parallelMaze);
         else if(stage==3) result["serial_maze"]={{"astar_expanded_nodes",serialExpansions},
             {"maze_refinement_timeouts",serialRefineTimeouts},{"maze_search_wall_seconds",serialSearch}};
+        if(!exchange.is_null()) result["topology_exchange"]=std::move(exchange);
         for(const auto& s:topologyStats) result["topology_refinement"][s.first]=s.second.report();
         result["local_optimizer"]=std::move(conflict);
         report["stages"].push_back(result);

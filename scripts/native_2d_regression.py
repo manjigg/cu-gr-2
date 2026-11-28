@@ -38,7 +38,8 @@ def compare(binary,baseline,output,jobs):
             matches=re.findall(re.escape(label)+r'\s*:\s*(\S+)',content)
             row[field]=matches[-1] if matches else ''
         row['guide_sha256']=hashlib.sha256(guide.read_bytes()).hexdigest() if guide.is_file() else ''
-        row['match']=all(row[k]==v for k,v in expected[key].items())
+        row['match']=all(row[k]==expected[key][k] for k in
+                         ('case','side','exit','wire_metric','via_count','overflow','guide_sha256'))
         return row
     with ThreadPoolExecutor(jobs) as pool,(output/'comparison.tsv').open('w') as stream:
         writer=csv.DictWriter(stream,['case','side','exit','wire_metric','via_count','overflow','guide_sha256','match'],delimiter='\t')

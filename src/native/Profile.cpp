@@ -8,7 +8,8 @@ const char* timings[]={
     "total","input","initialization","seed","local_seed","cross_die_seed","flute","pattern_dp",
     "hbt_search","branch_repair","sparse_maze","available","resources","cost","capacity","step_cost",
     "validate","commit","release","stage_1","stage_2","stage_3","candidate_generation","master_solver","guide_output",
-    "stage_1_maze","stage_3_maze","maze_refinement","conflict_optimizer"
+    "stage_1_maze","stage_3_maze","maze_refinement","conflict_optimizer",
+    "candidate_archive","archive_safe_pruning","resource_blockers","exchange_tasks","exchange_regeneration","exchange_commit"
 };
 const char* counters[]={
     "local_paths_calls","hbt_sites_visited","dp_labels_generated","dp_label_merges","dp_labels_pruned",

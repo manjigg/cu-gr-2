@@ -36,7 +36,7 @@ def routing_geometry(manifest, die):
     return layers,lines,centers,dbu
 
 
-def check(config, directory):
+def check(config, directory, require_budget=True):
     model = json.loads(config.read_text())
     stats = json.loads((directory/'routing_statistics.json').read_text())
     die = model['dies']
@@ -180,7 +180,8 @@ def check(config, directory):
         raise ValueError('Reported totals do not match routed edges')
     if model.get('optimization_mode')=='budgeted':
         excess=max(0,len(hbts)-model['hbt_budget'])
-        if excess or stats.get('hbt_budget_excess')!=excess or stats.get('budget_status')!='FEASIBLE':
+        budget_status='HEURISTIC_BUDGET_UNMET' if excess else 'FEASIBLE'
+        if (require_budget and excess) or stats.get('hbt_budget_excess')!=excess or stats.get('budget_status')!=budget_status:
             raise ValueError('Routed HBT assignment exceeds budget or disagrees with budget report')
     return dict(original_pins=real_pins, via_count=vias, hbt_count=len(hbts),
                 wirelength_um=sum(um), checked_components=len(components))

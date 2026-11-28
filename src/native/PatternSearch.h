@@ -32,18 +32,21 @@ class PatternSearch {
 public:
     PatternSearch(const RoutingGraph& graph,int net,const Deadline& time):g(graph),net(net),time(time) {}
     Routes enumerate(bool detours) const;
-    Routes enumerateFast(bool detours,FastPatternCache& cache) const;
+    Routes enumerateFast(bool detours,FastPatternCache& cache,const ResourceReadView* view=nullptr,
+                         const std::function<void(const Edges&)>& observe={}) const;
     Routes localSeed() const;
     Routes localSeed(const std::vector<std::vector<GRPoint>>& pins) const;
     Routes refineMaze(const Route&,const ResourceReadView* view=nullptr) const;
-    std::set<Edges> localPaths(GRPoint a,GRPoint b,const ResourceReadView* view=nullptr) const;
+    std::set<Edges> localPaths(GRPoint a,GRPoint b,const ResourceReadView* view=nullptr,
+                              const std::function<void(const Edges&)>& observe={}) const;
 private:
     using PathList=std::set<Edges>;
     using PathCache=std::map<std::pair<GRPoint,GRPoint>,std::shared_ptr<const PathList>>;
     const RoutingGraph& g;
     int net;
     const Deadline& time;
-    std::set<Edges> paths(GRPoint a,GRPoint b,bool detours,PathCache* cache=nullptr,bool fast=false) const;
+    std::set<Edges> paths(GRPoint a,GRPoint b,bool detours,PathCache* cache=nullptr,bool fast=false,
+                          const ResourceReadView* view=nullptr,const std::function<void(const Edges&)>& observe={}) const;
 };
 struct MasterResult {
     std::string status;

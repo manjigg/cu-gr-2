@@ -35,7 +35,8 @@ static void vias(Edges& edges,GRPoint& p,int to) {
 static Edges join(const Edges& a,const Edges& b) {
     Edges out=a;out.insert(b.begin(),b.end());return out;
 }
-std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b,const ResourceReadView* view) const {
+std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b,const ResourceReadView* view,
+                                        const std::function<void(const Edges&)>& observe) const {
     Profile::count(Event::LocalPaths);
     time.check();
     std::set<Edges> results;
@@ -48,6 +49,7 @@ std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b,const ResourceRead
             if(k==2) {
                 auto complete=edges; vias(complete,p,b.layerIdx);
                 if(g.available(net,complete,view)) results.insert(std::move(complete));
+                else if(observe) observe(complete);
                 return;
             }
             int axis=(first+k)%2;
@@ -129,20 +131,27 @@ Routes PatternSearch::localSeed(const std::vector<std::vector<GRPoint>>& pins) c
     }
     return alternative;
 }
-std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache* cache,bool fast) const {
+std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache* cache,bool fast,
+                                    const ResourceReadView* view,const std::function<void(const Edges&)>& observe) const {
+    auto available=[&](const Edges& edges) {
+        if(g.available(net,edges,view)) return true;
+        if(observe) observe(edges);
+        return false;
+    };
     auto pathsFor=[&](GRPoint u,GRPoint v)->std::shared_ptr<const PathList> {
         const auto key=std::make_pair(u,v);
         if(cache) {
             const auto found=cache->find(key);
             if(found!=cache->end()) return found->second;
         }
-        auto generated=std::make_shared<const PathList>(localPaths(u,v));
+        auto generated=std::make_shared<const PathList>(localPaths(u,v,view,observe));
         if(cache && cache->size()<512) cache->emplace(key,generated);
         return generated;
     };
     std::set<Edges> out;
     if(a.dieIdx==b.dieIdx) out=*pathsFor(a,b);
-    if(detours && a.dieIdx==b.dieIdx && (a.x!=b.x || a.y!=b.y)) {
+    // 原二维绕行器直接读 GridGraph 账本。有只读视图时，用可校验的原生局部路径。
+    if(!view && detours && a.dieIdx==b.dieIdx && (a.x!=b.x || a.y!=b.y)) {
         const auto& grid=g.model.dies[a.dieIdx]->grid;
         GRNet local(net,"detour",{{a},{b}},nullptr);
         auto tree=std::make_shared<SteinerTreeNode>(a,utils::IntervalT<int>(a.layerIdx));
@@ -166,7 +175,7 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
                 }
             }
         });
-        if(g.available(net,extra)) out.insert(std::move(extra));
+        if(available(extra)) out.insert(std::move(extra));
     }
     // L1 凸函数的子水平集排序。保留全部合法离散站点，精确搜索不截断排名。
     XY pa=g.center(a),pb=g.center(b);
@@ -213,13 +222,13 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
                 Profile::count(Event::HbtSites);
                 auto connect=[&](const Edge& h,const Edge* second) {
                     time.check();
-                    if(!g.available(net,{h})) return;
+                    if(!available({h})) return;
                     auto u=a.dieIdx?h.b:h.a;
                     auto v=a.dieIdx?h.a:h.b;
                     Edges crossing{h};
                     if(second) crossing.insert(*second);
                     auto last=second?(a.dieIdx?second->b:second->a):v;
-                    if(second && !g.available(net,crossing)) return;
+                    if(second && !available(crossing)) return;
                     auto ahead=pathsFor(a,u);
                     if(ahead->empty()) return;
                     auto tail=pathsFor(last,b);
@@ -229,7 +238,7 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
                     for(const auto& left:*ahead) for(const auto& right:*tail) for(const auto& mid:*middle) {
                         time.check();
                         auto whole=join(join(left,right),join(mid,crossing));
-                        if(!g.available(net,whole)) continue;
+                        if(!available(whole)) continue;
                         best=std::min(best,g.cost(whole));
                         out.insert(std::move(whole));
                     }
@@ -260,14 +269,14 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
         time.check();
         Profile::count(Event::HbtSites);
         GRPoint u=a.dieIdx?h.b:h.a, v=a.dieIdx?h.a:h.b;
-        if(!g.available(net,{h})) continue;
+        if(!available({h})) continue;
         auto starts=pathsFor(a,u);
         auto splice=[&](const Edges& middle,GRPoint last) {
             const auto tails=pathsFor(last,b);
             for(const auto& left:*starts) for(const auto& right:*tails) {
                 time.check();
                 auto whole=join(join(left,middle),right);
-                if(g.available(net,whole)) out.insert(std::move(whole));
+                if(available(whole)) out.insert(std::move(whole));
             }
         };
         if(a.dieIdx!=b.dieIdx) splice({h},v);
@@ -384,12 +393,13 @@ Routes PatternSearch::enumerate(bool detours) const {
     }
     return result;
 }
-Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const {
+Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache,const ResourceReadView* view,
+                                    const std::function<void(const Edges&)>& observe) const {
     Measured measured(Timing::PatternDP);
     const auto& pins=g.terminals(net);
     const auto& cfg=g.model.config;
     const auto requested=cfg.value("beam_width",8);
-    const bool incremental=cfg.value("enable_incremental_dp",false);
+    const bool incremental=!view && cfg.value("enable_incremental_dp",false);
     const bool adaptive=cfg.value("enable_adaptive_beam",false);
     if(requested<1 || requested>128) throw std::invalid_argument("Invalid beam width");
     const size_t width=pins.size()>32?std::max(2,requested/2):requested;
@@ -401,10 +411,10 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
         std::set<Edges> seen;
         try {
             for(auto a:pins[0]) for(auto b:pins[1]) {
-                for(const auto& edges:paths(a,b,detours,memo,true)) {
+                for(const auto& edges:paths(a,b,detours,memo,true,view,observe)) {
                     time.check();
                     Route route{a,edges};
-                    try {g.validate(net,route);} catch(const std::invalid_argument&) {continue;}
+                    try {g.validate(net,route,view);} catch(const std::invalid_argument&) {continue;}
                     if(seen.insert(edges).second) found.push_back(std::move(route));
                 }
             }
@@ -503,7 +513,7 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
         for(const auto& from:a) {
             Bucket next;
             for(const auto& to:b) {
-                for(const auto& path:paths(from.first,to.first,detours,memo,true)) {
+                for(const auto& path:paths(from.first,to.first,detours,memo,true,view,observe)) {
                     for(const auto& left:from.second) for(const auto& right:to.second) {
                         time.check();
                         Profile::count(Event::LabelMerges);
@@ -524,12 +534,13 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
                                 combined.demand.reset(new Demand);
                                 feasible=g.evaluateIncrement(net,left.edges,left.demand?*left.demand:empty,
                                                             combined.edges,*combined.demand,combined.quality);
-                            } else feasible=g.evaluateCompact(net,combined.edges,combined.quality);
+                            } else feasible=g.evaluateCompact(net,combined.edges,combined.quality,view);
                         }
 #ifdef CUGR_DP_MEMORY_PROFILE
                         combined.measure();
 #endif
                         if(!feasible) {
+                            if(!duplicate && observe) observe(Edges(combined.edges.begin(),combined.edges.end()));
                             Profile::count(Event::LabelsPruned);
                             continue;
                         }
@@ -579,7 +590,7 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
     std::set<Edges> seen;
     for(const auto& state:solve(topology.projection.begin()->first)) for(const auto& label:state.second) {
         Route route{state.first,Edges(label.edges.begin(),label.edges.end())};
-        try {g.validate(net,route);} catch(const std::invalid_argument&) {continue;}
+        try {g.validate(net,route,view);} catch(const std::invalid_argument&) {continue;}
         if(seen.insert(route.edges).second) routes.push_back(std::move(route));
     }
     return routes;

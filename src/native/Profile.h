@@ -19,7 +19,8 @@ struct Route;
 enum class Timing {
     Total, Input, Initialization, Seed, LocalSeed, CrossDieSeed, Flute, PatternDP,
     HbtSearch, BranchRepair, Maze, Available, Resources, Cost, Capacity, StepCost,
-    Validate, Commit, Release, Stage1, Stage2, Stage3, Candidates, Master, Output, SeedMaze, Stage3Maze, MazeRefine, Conflict, Count
+    Validate, Commit, Release, Stage1, Stage2, Stage3, Candidates, Master, Output, SeedMaze, Stage3Maze, MazeRefine, Conflict,
+    Archive, ArchivePrune, Blockers, ExchangeTasks, ExchangeRegeneration, ExchangeCommit, Count
 };
 enum class Event {
     LocalPaths, HbtSites, LabelsGenerated, LabelMerges, LabelsPruned, MazeExpansions,

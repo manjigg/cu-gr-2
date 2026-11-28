@@ -21,7 +21,7 @@ XY RoutingGraph::center(GRPoint p) const {
 }
 RoutingGraph::RoutingGraph(const MultiDieDesign& m):model(m) {
     const auto& j=m.config;
-    indexOwners=j.value("enable_failure_driven_repair",false);
+    indexOwners=j.value("enable_failure_driven_repair",false) || j.value("enable_topology_exchange",false);
     const auto& b=j.at("bonding");
     coupled=j.value("enable_hbt_footprint",false);
     if(j.value("enable_hbt_access_model",false)) accessWeight=weight(j,"hbt_access_weight");
@@ -472,8 +472,10 @@ bool RoutingGraph::collectHbtSites(int net,const Range& edges,std::vector<int>& 
     std::sort(chosen.begin(),chosen.end());
     return std::adjacent_find(chosen.begin(),chosen.end())==chosen.end();
 }
-bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vector<int>* released,const ResourceReadView* view) const {
+bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vector<int>* released,
+                                 const ResourceReadView* view,bool staticOnly) const {
     auto alreadyUsed=[&](int id) {
+        if(staticOnly) return false;
         if(view && view->provisional && std::binary_search(view->provisional->sites.begin(),view->provisional->sites.end(),id)) return true;
         return used.count(siteId(id)) && !(released && std::binary_search(released->begin(),released->end(),id));
     };
@@ -710,6 +712,13 @@ PreparedRoute RoutingGraph::prepareRoute(int net,const Route& route) const {
     }
     return summary;
 }
+bool RoutingGraph::staticallyAvailable(const RouteResourceSummary& prepared) const {
+    if(prepared.graph!=this) throw std::invalid_argument("Route summary belongs to another resource graph");
+    return availableSites(prepared.sites,nullptr,nullptr,true) &&
+           std::all_of(prepared.demand.begin(),prepared.demand.end(),[&](const auto& r) {
+               return std::isfinite(r.second) && r.second>=0 && r.second<=capacity(r.first)+1e-12;
+           });
+}
 void RoutingGraph::validate(int net,const Route& route,const ResourceReadView* view) const {
     checkView(net,view);
     Measured measured(Timing::Validate);
@@ -784,6 +793,43 @@ std::vector<Resource> RoutingGraph::blockingResources(int net,const Edge& edge,c
     blocked.erase(std::unique(blocked.begin(),blocked.end()),blocked.end());
     return blocked;
 }
+template<class Range>
+std::vector<BlockedResource> RoutingGraph::dynamicBlockers(const Range& demand,const std::vector<int>& sitesUsed,
+                                                          const ResourceReadView& view) const {
+    // 静态非法的请求不会派生交换任务。站点间距冲突保留请求站点和实际占用邻站。
+    if(!availableSites(sitesUsed,nullptr,nullptr,true)) return {};
+    for(const auto& r:demand) if(r.second>capacity(r.first)+1e-12) return {};
+    std::vector<BlockedResource> blocked;
+    const auto* removed=releasedSites(&view);
+    auto active=[&](int site) {
+        return used.count(siteId(site)) && !(removed && std::binary_search(removed->begin(),removed->end(),site));
+    };
+    for(const auto& r:demand)
+        if(!users(r.first).empty() && r.second+externalDemand(r.first,&view)>capacity(r.first)+1e-12)
+            blocked.push_back({r.first,r.first});
+    for(int site:sitesUsed) {
+        if(active(site)) blocked.push_back({siteId(site),siteId(site)});
+        for(int neighbor:spacingNeighbors(site)) if(active(neighbor))
+            blocked.push_back({siteId(site),siteId(neighbor)});
+    }
+    std::sort(blocked.begin(),blocked.end());
+    blocked.erase(std::unique(blocked.begin(),blocked.end(),[](const BlockedResource& a,const BlockedResource& b){
+        return !(a<b) && !(b<a);
+    }),blocked.end());
+    return blocked;
+}
+std::vector<BlockedResource> RoutingGraph::dynamicBlockers(int net,const Edges& edges,const ResourceReadView& view) const {
+    checkView(net,&view);
+    std::vector<int> sitesUsed;
+    if(!collectHbtSites(net,edges,sitesUsed)) return {};
+    return dynamicBlockers(resources(edges),sitesUsed,view);
+}
+std::vector<BlockedResource> RoutingGraph::dynamicBlockers(const RouteResourceSummary& route,
+                                                          const ResourceReadView& view) const {
+    checkView(route.net,&view);
+    if(route.graph!=this) throw std::invalid_argument("Route summary belongs to another resource graph");
+    return dynamicBlockers(route.demand,route.sites,view);
+}
 ResourceReadView RoutingGraph::groupView(int net,const std::vector<int>& group,const std::vector<PreparedRoute>& provisional) const {
     std::set<int> ids(group.begin(),group.end());
     if(ids.size()!=group.size() || !ids.count(net)) throw std::invalid_argument("Invalid resource view group");
@@ -796,6 +842,7 @@ ResourceReadView RoutingGraph::groupView(int net,const std::vector<int>& group,c
     std::sort(summary->sites.begin(),summary->sites.end());
     summary->demand.assign(removed.begin(),removed.end());
     ResourceReadView view(this,net,ledgerVersion,std::move(summary));
+    view.group=group;
     if(!provisional.empty()) {
         std::shared_ptr<RouteResourceSummary> extra(new RouteResourceSummary(this,net));
         Demand demand;
@@ -811,18 +858,17 @@ ResourceReadView RoutingGraph::groupView(int net,const std::vector<int>& group,c
     }
     return view;
 }
-bool RoutingGraph::replaceGroup(const std::vector<int>& ids,const std::vector<PreparedRoute>& routes) {
+bool RoutingGraph::groupDemand(const std::vector<int>& ids,const std::vector<PreparedRoute>& routes,
+                               const ResourceReadView& view,Demand& additions) const {
     if(ids.empty() || ids.size()!=routes.size()) throw std::invalid_argument("Invalid route transaction group");
-    auto view=groupView(ids.front(),ids);
-    Demand additions;
+    checkView(ids.front(),&view);
+    if(view.group!=ids || view.provisional) throw std::invalid_argument("Wrong group resource view");
     std::vector<int> sites;
-    OwnerEdit index(*this);
     for(size_t i=0;i<ids.size();++i) {
         const auto& next=routes[i];
         if(!next || next->graph!=this || next->net!=ids[i]) throw std::invalid_argument("Invalid group route owner");
         sites.insert(sites.end(),next->sites.begin(),next->sites.end());
         for(const auto& r:next->demand) additions[r.first]+=r.second;
-        index.change(ids[i],owned.at(ids[i]),next);
     }
     std::sort(sites.begin(),sites.end());
     if(std::adjacent_find(sites.begin(),sites.end())!=sites.end() || !availableSites(sites,releasedSites(&view))) return false;
@@ -831,6 +877,20 @@ bool RoutingGraph::replaceGroup(const std::vector<int>& ids,const std::vector<Pr
         r.second+=externalDemand(r.first,&view);
         if(r.second>capacity(r.first)+1e-12) return false;
     }
+    return true;
+}
+bool RoutingGraph::canReplaceGroup(const std::vector<int>& ids,const std::vector<PreparedRoute>& routes,
+                                   const ResourceReadView& outside) const {
+    Demand additions;
+    return groupDemand(ids,routes,outside,additions);
+}
+bool RoutingGraph::replaceGroup(const std::vector<int>& ids,const std::vector<PreparedRoute>& routes) {
+    if(ids.empty() || ids.size()!=routes.size()) throw std::invalid_argument("Invalid route transaction group");
+    const auto view=groupView(ids.front(),ids);
+    Demand additions;
+    if(!groupDemand(ids,routes,view,additions)) return false;
+    OwnerEdit index(*this);
+    for(size_t i=0;i<ids.size();++i) index.change(ids[i],owned.at(ids[i]),routes[i]);
     index.reserve();
     std::vector<Resource> inserted;
     inserted.reserve(additions.size());

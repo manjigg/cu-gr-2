@@ -18,6 +18,12 @@ struct ResourceLocation {
     GREdgeType type;
     int die,layer,x,y;
 };
+struct BlockedResource {
+    Resource requested, occupied;
+    bool operator<(const BlockedResource& b) const {
+        return std::tie(requested,occupied)<std::tie(b.requested,b.occupied);
+    }
+};
 struct Site {
     int id,capacity,owner;
     XY bonded;
@@ -39,6 +45,8 @@ public:
     double cost() const {return baseCost;}
     double wirelength() const {return wireUm;}
     size_t vias() const {return viaCount;}
+    int netId() const noexcept {return net;}
+    bool sameOwner(const RouteResourceSummary& other) const noexcept {return net==other.net && graph==other.graph;}
     const std::vector<int>& hbtSites() const {return sites;}
     const std::vector<std::pair<Resource,double>>& resources() const {return demand;}
 private:
@@ -56,6 +64,9 @@ using PreparedRoute=std::shared_ptr<const RouteResourceSummary>;
 // 批次屏障之间，基础账本保持只读。视图仅持有本网不可变摘要，免去复制两颗 Die。
 class ResourceReadView {
     friend class RoutingGraph;
+public:
+    uint64_t version() const noexcept {return epoch;}
+private:
     ResourceReadView(const RoutingGraph* graph,int net,uint64_t epoch,PreparedRoute old):
         graph(graph),net(net),epoch(epoch),old(std::move(old)) {}
     const RoutingGraph* graph;
@@ -63,6 +74,7 @@ class ResourceReadView {
     uint64_t epoch;
     PreparedRoute old;
     PreparedRoute provisional;
+    std::vector<int> group;
 };
 class RoutingGraph {
 public:
@@ -93,17 +105,23 @@ public:
     Resource nodeCount() const {return volume;}
     bool extendPath(int net,const Edges& path,Edges& tree,Demand& demand,std::vector<int>& hbt,const ResourceReadView* view=nullptr) const;
     PreparedRoute prepareRoute(int net,const Route& route) const;
+    bool staticallyAvailable(const RouteResourceSummary&) const;
     bool available(const RouteResourceSummary& prepared,const ResourceReadView* view=nullptr) const;
     void commitPrepared(int net,const PreparedRoute& prepared);
     bool replacePrepared(int net,const PreparedRoute& prepared);
     bool replaceGroup(const std::vector<int>& nets,const std::vector<PreparedRoute>& routes);
+    bool canReplaceGroup(const std::vector<int>& nets,const std::vector<PreparedRoute>& routes,
+                         const ResourceReadView& outside) const;
     ResourceReadView groupView(int net,const std::vector<int>& group,const std::vector<PreparedRoute>& provisional={}) const;
     const std::vector<int>& users(Resource) const;
     std::vector<Resource> blockingResources(int net,const Edge&,const ResourceReadView* view=nullptr) const;
+    std::vector<BlockedResource> dynamicBlockers(int net,const Edges&,const ResourceReadView&) const;
+    std::vector<BlockedResource> dynamicBlockers(const RouteResourceSummary&,const ResourceReadView&) const;
     void commit(int net,const Route& route);
     void release(int net);
     const Occupancy& demand() const {return used;}
     ResourceReadView readView(int net) const {return ResourceReadView(this,net,ledgerVersion,owned.at(net));}
+    uint64_t resourceVersion() const noexcept {return ledgerVersion;}
     Resource hbtResource(int site) const {return siteId(site);}
     std::vector<int> spacingNeighbors(int site) const;
     void searchPrices(Occupancy prices) {dynamicPrice=std::move(prices);}
@@ -166,7 +184,11 @@ private:
     unsigned countTracks(int die,int layer,int position) const;
     template<class Range> Demand computeDemand(const Range&) const;
     template<class Range> bool collectHbtSites(int net,const Range& edges,std::vector<int>& out) const;
-    bool availableSites(const std::vector<int>& sites,const std::vector<int>* released=nullptr,const ResourceReadView* view=nullptr) const;
+    bool availableSites(const std::vector<int>& sites,const std::vector<int>* released=nullptr,
+                        const ResourceReadView* view=nullptr,bool staticOnly=false) const;
+    bool groupDemand(const std::vector<int>&,const std::vector<PreparedRoute>&,const ResourceReadView&,Demand&) const;
+    template<class Range> std::vector<BlockedResource> dynamicBlockers(const Range&,const std::vector<int>&,
+                                                                       const ResourceReadView&) const;
     double resourcePrice(Resource,double cap,double demand) const;
     double extraPrice(Resource id,double demand=1.) const;
     bool scoreCompact(const std::vector<Edge>&,const Demand&,PathQuality&,const ResourceReadView*) const;

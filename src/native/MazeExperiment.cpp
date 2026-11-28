@@ -30,50 +30,75 @@ std::string protocol(const RoutingGraph& g) {
     return identity.dump();
 }
 template<class Archive,class Point> void point(Archive& ar,Point& p) {ar & p.dieIdx & p.layerIdx & p.x & p.y;}
+void writeRoute(boost::archive::binary_oarchive& ar,const Route& route) {
+    point(ar,route.root);
+    ar<<route.edges.size();
+    for(const auto& e:route.edges) {point(ar,e.a);point(ar,e.b);ar<<e.type<<e.site;}
 }
-void saveMazeCheckpoint(const IncumbentSolution& solution,const std::vector<std::pair<double,int>>& priority,const std::string& path) {
+Route readRoute(boost::archive::binary_iarchive& ar,const RoutingGraph& graph) {
+    Route route{{0,0,0},{}};
+    point(ar,route.root);
+    size_t count;
+    ar>>count;
+    if(count>graph.nodeCount()) throw std::invalid_argument("Checkpoint tree edge count exceeds grid");
+    for(size_t i=0;i<count;++i) {
+        GRPoint a(0,0,0),b(0,0,0);
+        GREdgeType type;
+        int site;
+        point(ar,a);point(ar,b);ar>>type>>site;
+        if((type!=GREdgeType::WIRE && type!=GREdgeType::VIA && type!=GREdgeType::HBT) ||
+           !route.edges.emplace(a,b,type,site).second) throw std::invalid_argument("Invalid checkpoint edge");
+    }
+    return route;
+}
+void saveCheckpoint(const IncumbentSolution& solution,const std::vector<std::pair<double,int>>& priority,
+                    const std::string& path,bool stage2) {
     std::ofstream file;
     file.exceptions(std::ios::badbit|std::ios::failbit);
     file.open(path,std::ios::binary);
     {
         boost::archive::binary_oarchive ar(file);
-        ar<<std::string("CUGR3D-MAZE-1")<<protocol(solution.graph)<<solution.current.size();
+        ar<<std::string(stage2?"CUGR3D-STAGE2-1":"CUGR3D-MAZE-1")<<protocol(solution.graph)<<solution.current.size();
         for(const auto& entry:solution.current) {
             ar<<entry.version<<entry.failures<<bool(entry.summary);
-            if(!entry.summary) continue;
-            point(ar,entry.route.root);ar<<entry.route.edges.size();
-            for(const auto& e:entry.route.edges) {point(ar,e.a);point(ar,e.b);ar<<e.type<<e.site;}
+            if(entry.summary) writeRoute(ar,entry.route);
+            if(stage2) {
+                ar<<entry.alternatives.size();
+                for(const auto& route:entry.alternatives) writeRoute(ar,route);
+            }
         }
         ar<<priority<<solution.graph.demand()<<solution.graph.searchPrices();
     }
     file.close();
 }
-std::vector<std::pair<double,int>> loadMazeCheckpoint(IncumbentSolution& solution,const std::string& path) {
+std::vector<std::pair<double,int>> loadCheckpoint(IncumbentSolution& solution,const std::string& path,bool stage2) {
     std::ifstream file(path,std::ios::binary);
     if(!file) throw std::runtime_error("Cannot open maze checkpoint: "+path);
     boost::archive::binary_iarchive ar(file);
     std::string version,input;
     size_t nets;
     ar>>version>>input>>nets;
-    if(version!="CUGR3D-MAZE-1" || input!=protocol(solution.graph) || nets!=solution.current.size())
-        throw std::invalid_argument("Maze checkpoint and physical protocol differ");
+    if(version!=(stage2?"CUGR3D-STAGE2-1":"CUGR3D-MAZE-1") || input!=protocol(solution.graph) || nets!=solution.current.size())
+        throw std::invalid_argument("Checkpoint stage or physical protocol differs");
     for(size_t id=0;id<nets;++id) {
         unsigned revision,failures;bool present;
         ar>>revision>>failures>>present;
         auto& state=solution.current[id];
         if(present) {
-            Route route{{0,0,0},{}};
-            point(ar,route.root);
-            size_t count;ar>>count;
-            if(count>solution.graph.nodeCount()) throw std::invalid_argument("Checkpoint tree edge count exceeds grid");
-            for(size_t i=0;i<count;++i) {
-                GRPoint a(0,0,0),b(0,0,0);GREdgeType type;int site;
-                point(ar,a);point(ar,b);ar>>type>>site;
-                if((type!=GREdgeType::WIRE && type!=GREdgeType::VIA && type!=GREdgeType::HBT) ||
-                   !route.edges.emplace(a,b,type,site).second) throw std::invalid_argument("Invalid checkpoint edge");
-            }
+            auto route=readRoute(ar,solution.graph);
             auto summary=solution.graph.prepareRoute(id,route);
             solution.publish(id,std::move(route),summary);
+        }
+        if(stage2) {
+            size_t count;
+            ar>>count;
+            if(count>128) throw std::invalid_argument("Too many Stage 2 checkpoint alternatives");
+            for(size_t i=0;i<count;++i) {
+                auto route=readRoute(ar,solution.graph);
+                const auto summary=solution.graph.prepareRoute(id,route);
+                if(!solution.graph.staticallyAvailable(*summary)) throw std::invalid_argument("Illegal checkpoint alternative");
+                state.alternatives.push_back(std::move(route));
+            }
         }
         state.version=revision;state.failures=failures;
     }
@@ -87,6 +112,20 @@ std::vector<std::pair<double,int>> loadMazeCheckpoint(IncumbentSolution& solutio
     solution.graph.restoreCheckpointDemand(demand);
     solution.graph.searchPrices(std::move(prices));
     return priority;
+}
+}
+void saveMazeCheckpoint(const IncumbentSolution& solution,const std::vector<std::pair<double,int>>& priority,
+                        const std::string& path) {
+    saveCheckpoint(solution,priority,path,false);
+}
+std::vector<std::pair<double,int>> loadMazeCheckpoint(IncumbentSolution& solution,const std::string& path) {
+    return loadCheckpoint(solution,path,false);
+}
+void saveStage2Checkpoint(const IncumbentSolution& solution,const std::string& path) {
+    saveCheckpoint(solution,{},path,true);
+}
+void loadStage2Checkpoint(IncumbentSolution& solution,const std::string& path) {
+    loadCheckpoint(solution,path,true);
 }
 Json measureMazeSearch(const IncumbentSolution& solution,const std::vector<std::pair<double,int>>& priority,int stride) {
     const auto& graph=solution.graph;

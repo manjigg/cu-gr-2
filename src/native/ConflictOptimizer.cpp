@@ -78,42 +78,88 @@ ConflictGroups buildConflictGroups(const RoutingGraph& graph,const std::vector<s
     return result;
 }
 
-LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
-                        const std::vector<std::vector<PreparedRoute>>& choices,const Deadline& deadline,bool protectHbt,size_t hbtRoom) {
+namespace {
+struct SelectionContext {
+    bool protect=false,exhaustive=false;
+    size_t budget=std::numeric_limits<size_t>::max(),outsideHbt=0;
+    const ResourceReadView* view=nullptr;
+};
+template<class Cost>
+LocalResult solveChoices(RoutingGraph& graph,const std::vector<int>& ids,
+                         const std::vector<const std::vector<PreparedRoute>*>& choices,
+                         const Deadline& deadline,const SelectionContext& ctx) {
     Measured measured(Timing::Master);
     LocalResult result;
     result.selection.assign(ids.size(),0);
     std::vector<size_t> chosen(ids.size());
+    std::vector<PreparedRoute> combination(ids.size());
     std::vector<double> suffix(ids.size()+1,0.);
-    double best=0;
+    std::vector<Cost> minima(ids.size());
+    std::vector<size_t> suffixHbt(ids.size()+1);
+    Cost best=0;
     size_t hbtBudget=0;
     for(size_t i=ids.size();i>0;) {
         --i;
-        const auto& candidates=choices.at(ids[i]);
-        best+=candidates.front()->cost();
+        const auto& candidates=*choices[i];
+        if(candidates.empty()) throw std::invalid_argument("Empty local candidate set");
+        combination[i]=candidates.front();
+        if(!ctx.view) best+=candidates.front()->cost();
         hbtBudget+=candidates.front()->hbtSites().size();
         const auto cheap=std::min_element(candidates.begin(),candidates.end(),
             [](const PreparedRoute& a,const PreparedRoute& b){return a->cost()<b->cost();});
         suffix[i]=std::nextafter(suffix[i+1]+(*cheap)->cost(),0.);
+        minima[i]=(*cheap)->cost();
+        if(ctx.view) {
+            const auto minHbt=std::min_element(candidates.begin(),candidates.end(),
+                [](const PreparedRoute& a,const PreparedRoute& b){return a->hbtSites().size()<b->hbtSites().size();});
+            suffixHbt[i]=suffixHbt[i+1]+(*minHbt)->hbtSites().size();
+        }
     }
-    auto excess=[&](size_t h){return h>hbtRoom?h-hbtRoom:0;};
+    if(ctx.view) {
+        if(!graph.canReplaceGroup(ids,combination,*ctx.view)) throw std::logic_error("Invalid incumbent combination");
+        for(const auto& incumbent:combination) best+=incumbent->cost();
+    }
+    auto excess=[&](size_t h){
+        const size_t total=ctx.outsideHbt+h;
+        return total>ctx.budget?total-ctx.budget:0;
+    };
     auto bestExcess=excess(hbtBudget);
-    std::function<void(size_t,double,size_t)> search=[&](size_t i,double value,size_t hbt) {
+    const Cost tolerance=Cost(1e-9L);
+    std::function<void(size_t,Cost,size_t)> search=[&](size_t i,Cost value,size_t hbt) {
         deadline.check();
         if(i==ids.size()) {
-            if(excess(hbt)<bestExcess || (excess(hbt)==bestExcess && value+1e-9<best)) {
+            ++result.combinations;
+            if(ctx.view && !graph.canReplaceGroup(ids,combination,*ctx.view)) return;
+            if(excess(hbt)<bestExcess || (excess(hbt)==bestExcess && value+tolerance<best)) {
                 bestExcess=excess(hbt);best=value;result.selection=chosen;
             }
             return;
         }
         const auto id=ids[i];
-        for(size_t k=0;k<choices[id].size();++k) {
+        for(size_t k=0;k<choices[i]->size();++k) {
+            if(ctx.view) deadline.check();
             ++result.visited;
             Profile::count(Event::MasterNodes);
-            const auto& candidate=choices[id][k];
-            const double next=value+candidate->cost();
+            const auto& candidate=(*choices[i])[k];
+            const Cost next=value+candidate->cost();
             const auto nextHbt=hbt+candidate->hbtSites().size();
-            if(protectHbt && nextHbt>hbtBudget) continue;
+            if(ctx.view) {
+                if(!ctx.exhaustive) {
+                    const auto lowerExcess=excess(nextHbt+suffixHbt[i+1]);
+                    // 同一求和值顺序中逐项取最小值。浮点加法对各项单调，避免异序后缀高估。
+                    Cost lower=next;
+                    for(size_t j=i+1;j<minima.size();++j) lower+=minima[j];
+                    if(lowerExcess>bestExcess || (lowerExcess==bestExcess && lower+tolerance>=best)) {
+                        ++result.pruned;
+                        continue;
+                    }
+                }
+                combination[i]=candidate;
+                chosen[i]=k;
+                search(i+1,next,nextHbt);
+                continue;
+            }
+            if(ctx.protect && nextHbt>hbtBudget) continue;
             if(excess(nextHbt)>bestExcess || (excess(nextHbt)==bestExcess && next+suffix[i+1]>best+1e-9)
                || !graph.available(*candidate)) continue;
             graph.commitPrepared(id,candidate);
@@ -125,6 +171,33 @@ LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
     };
     try {search(0,0.,0);}
     catch(const SearchTimeout&) {result.complete=false;}
+    result.bestCost=best;
+    result.bestExcess=bestExcess;
     return result;
+}
+}
+LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
+                        const std::vector<std::vector<PreparedRoute>>& choices,const Deadline& deadline,
+                        bool protectHbt,size_t hbtRoom) {
+    std::vector<const std::vector<PreparedRoute>*> selected;
+    for(int id:ids) selected.push_back(&choices.at(id));
+    SelectionContext context;
+    context.protect=protectHbt;
+    context.budget=hbtRoom;
+    return solveChoices<double>(graph,ids,selected,deadline,context);
+}
+LocalResult selectGroup(RoutingGraph& graph,const std::vector<int>& ids,
+                        const std::vector<std::vector<PreparedRoute>>& choices,const Deadline& deadline,
+                        size_t hbtOutside,size_t hbtBudget,bool exhaustive) {
+    if(ids.empty() || ids.size()!=choices.size()) throw std::invalid_argument("Invalid local choices");
+    const auto view=graph.groupView(ids.front(),ids);
+    std::vector<const std::vector<PreparedRoute>*> selected;
+    for(const auto& pool:choices) selected.push_back(&pool);
+    SelectionContext context;
+    context.view=&view;
+    context.outsideHbt=hbtOutside;
+    context.budget=hbtBudget;
+    context.exhaustive=exhaustive;
+    return solveChoices<long double>(graph,ids,selected,deadline,context);
 }
 }

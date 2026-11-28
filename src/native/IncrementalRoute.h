@@ -21,6 +21,8 @@ struct IncumbentSolution {
     size_t after(const PreparedRoute& old,const PreparedRoute& candidate) const;
     void publish(int net,Route&& route,PreparedRoute summary);
     bool replace(int net,unsigned version,Route&& route,PreparedRoute summary);
+    bool replaceJoint(const std::vector<int>&,const std::vector<unsigned>&,std::vector<Route>&,
+                      const std::vector<PreparedRoute>&);
     Json metrics() const;
 };
 struct IncrementalResult {
