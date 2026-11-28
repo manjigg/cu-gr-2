@@ -8,10 +8,11 @@ run_files = 'scripts/*.py eval drcu'
 def run(command):
     if args.print_commands:
         print(command)
-    if os.system(command) is not 0:
+    status = os.system(command)
+    if status != 0:
         if not args.print_commands:
             print(command)
-        quit()
+        raise SystemExit(os.waitstatus_to_exitcode(status) if hasattr(os, 'waitstatus_to_exitcode') else 1)
 
 # cmake & copy run files
 # for sanitize, need to remove -static from src/CMakeLists.txt
@@ -50,7 +51,8 @@ run('cp -u -R {} {}'.format(run_files, args.run_dir))
 
 # make
 for target in build_targets:
-    run('cmake --build {} --target {} -- {}'.format(args.build_dir, target, args.make_options))
+    target_option = '--target {}'.format(target) if target else ''
+    run('cmake --build {} {} -- {}'.format(args.build_dir, target_option, args.make_options))
 cp_targets = all_targets if build_targets == [''] else build_targets
 for target in cp_targets:
     run('cp -u {}/{} {}'.format(args.build_dir, target, args.run_dir))

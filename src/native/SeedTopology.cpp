@@ -53,7 +53,32 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
     std::vector<unsigned> weights;
     for(const auto& p:pins) weights.push_back(graph.l1Weight(p.front().dieIdx));
     auto region=weightedMedianRegion(xy,weights);
-    auto h=graph.seedLanding(net,region.high,{});
+    auto plateauSite=[&](const std::set<int>& excluded) {
+        const auto& cfg=graph.model.config;
+        if(!cfg.value("enable_progressive_hbt_search",false)) return graph.seedLanding(net,region.high,{},excluded);
+        const int initial=integer(cfg.value("hbt_candidate_limit",Json(8)));
+        if(initial<1 || initial>128) throw std::invalid_argument("Invalid progressive HBT search width");
+        std::set<int> seen=excluded;
+        for(size_t k=initial;;k*=2) {
+            const auto near=graph.sitesNearRegion(region.low,region.high,k);
+            std::vector<Edge> selected;
+            auto best=std::make_pair(std::numeric_limits<double>::infinity(),-1);
+            for(const auto* site:near) {
+                time.check();
+                if(!seen.insert(site->id).second) continue;
+                Profile::count(Event::HbtSites);
+                double proxy=0;
+                for(size_t i=0;i<xy.size();++i) for(int dim:{0,1})
+                    proxy+=weights[i]*std::abs(double(xy[i][dim])-site->bonded[dim])/graph.model.units;
+                for(const auto& e:site->transitions) if(graph.available(net,{e})) {
+                    const auto rank=std::make_pair(proxy+graph.landingRisk(e),site->id);
+                    if(rank<best) {best=rank;selected={e};}
+                }
+            }
+            if(!selected.empty() || near.size()<k) return selected;
+        }
+    };
+    auto h=plateauSite({});
     if(h.empty()) return {};
     realize(single,{{first[0],first[1],h.front()}});
     // 在含 Die/层切换下界的端点度量上生成 Prim 树。每条跨 Die 分支有独立 landing；
@@ -63,13 +88,42 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
         std::vector<double> dist(count,std::numeric_limits<double>::infinity());
         std::vector<int> parent(count,-1);
         std::vector<bool> done(count,false);
+        const int threshold=integer(graph.model.config.value("prim_min_pins",Json(128)));
+        if(threshold<3) throw std::invalid_argument("prim_min_pins must be at least three");
+        const bool blocked=graph.model.config.value("enable_blocked_prim",false) && count>=threshold;
+        struct Block {
+            std::vector<int> ids;
+            XY lo,hi;
+            int layer;
+            double maximum=std::numeric_limits<double>::infinity();
+            std::pair<double,int> minimum{std::numeric_limits<double>::infinity(),-1};
+        };
+        std::vector<Block> blocks;
+        std::vector<size_t> blockOf;
+        std::vector<int> states;
+        if(blocked) {
+            std::vector<int> order(count);
+            std::iota(order.begin(),order.end(),0);blockOf.resize(count);
+            for(const auto& pin:pins) states.push_back(graph.stateIndex(pin.front()));
+            std::sort(order.begin(),order.end(),[&](int a,int b){return std::tie(states[a],xy[a],a)<std::tie(states[b],xy[b],b);});
+            for(int i:order) {
+                if(blocks.empty() || blocks.back().layer!=states[i] || blocks.back().ids.size()>=16)
+                    blocks.push_back({{},xy[i],xy[i],states[i]});
+                auto& b=blocks.back();b.ids.push_back(i);blockOf[i]=blocks.size()-1;
+                if(b.minimum.second<0 || i<b.minimum.second) b.minimum.second=i;
+                for(int a:{0,1}) {b.lo[a]=std::min(b.lo[a],xy[i][a]);b.hi[a]=std::max(b.hi[a],xy[i][a]);}
+            }
+            blocks[blockOf[0]].minimum={0.,0};
+        }
         std::vector<std::tuple<int,int,Edge>> crossings;
         Edges sites;
         dist[0]=0;
         for(int k=0;k<count;++k) {
             time.check();
             int u=-1;
-            for(int i=0;i<count;++i) if(!done[i] && (u<0 || dist[i]<dist[u])) u=i;
+            if(blocked) {
+                for(const auto& b:blocks) if(b.minimum.second>=0 && (u<0 || b.minimum<std::make_pair(dist[u],u))) u=b.minimum.second;
+            } else for(int i=0;i<count;++i) if(!done[i] && (u<0 || dist[i]<dist[u])) u=i;
             done[u]=true;
             if(parent[u]>=0) {
                 int v=parent[u];
@@ -83,11 +137,26 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
                     crossings.emplace_back(top,btm,site.front());
                 }
             }
-            for(int v=0;v<count;++v) if(!done[v]) {
+            auto relax=[&](int v) {
                 auto length=std::abs(xy[u][0]-xy[v][0])+std::abs(xy[u][1]-xy[v][1]);
                 double estimate=length*graph.minimumCostPerBondDbu()+
                     graph.layerDistance(graph.stateIndex(pins[u].front()),graph.stateIndex(pins[v].front()));
                 if(estimate<dist[v]) {dist[v]=estimate;parent[v]=u;}
+            };
+            if(!blocked) {for(int v=0;v<count;++v) if(!done[v]) relax(v);}
+            else for(size_t idx=0;idx<blocks.size();++idx) {
+                auto& b=blocks[idx];
+                int64_t distance=0;
+                for(int a:{0,1}) distance+=std::max<int64_t>({0,b.lo[a]-xy[u][a],xy[u][a]-b.hi[a]});
+                const double lb=distance*graph.minimumCostPerBondDbu()+graph.layerDistance(states[u],b.layer);
+                // 同一层状态分块。若块的最低可能距离已经达到所有当前键的最大值，
+                // 旧 Prim 的严格小于更新不能改变其中任何父边。
+                if(idx!=blockOf[u] && lb>=b.maximum) continue;
+                b.maximum=-1.;b.minimum={std::numeric_limits<double>::infinity(),-1};
+                for(int v:b.ids) if(!done[v]) {
+                    relax(v);b.maximum=std::max(b.maximum,dist[v]);
+                    if(b.minimum.second<0 || std::make_pair(dist[v],v)<b.minimum) b.minimum={dist[v],v};
+                }
             }
         }
         if(!crossings.empty()) realize(parts,crossings);
@@ -102,7 +171,7 @@ Routes initialCandidates(const RoutingGraph& graph,int net,const Deadline& time)
         while(std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count()<budget) {
             time.check();
             Profile::retry();
-            auto next=graph.seedLanding(net,region.high,{},excluded);
+            auto next=plateauSite(excluded);
             if(next.empty()) break;
             excluded.insert(next.front().site);
             realize(single,{{first[0],first[1],next.front()}});

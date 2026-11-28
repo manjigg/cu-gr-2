@@ -21,7 +21,35 @@ XY RoutingGraph::center(GRPoint p) const {
 }
 RoutingGraph::RoutingGraph(const MultiDieDesign& m):model(m) {
     const auto& j=m.config;
+    indexOwners=j.value("enable_failure_driven_repair",false);
     const auto& b=j.at("bonding");
+    coupled=j.value("enable_hbt_footprint",false);
+    if(j.value("enable_hbt_access_model",false)) accessWeight=weight(j,"hbt_access_weight");
+    using LayerPair=std::array<std::string,2>;
+    auto pairName=[](const Json& pair)->LayerPair {
+        if(!pair.is_array() || pair.size()!=2) throw std::invalid_argument("Invalid HBT layer pair");
+        return {{pair.at(0).get<std::string>(),pair.at(1).get<std::string>()}};
+    };
+    struct Reservation {int die,dl,dx,dy;GREdgeType type;double demand;};
+    std::map<LayerPair,std::vector<Reservation>> rules;
+    if(coupled) {
+        const auto& table=b.at("transition_footprints");
+        if(table.at("source").get<std::string>().empty()) throw std::invalid_argument("Missing HBT footprint provenance");
+        for(const auto& rule:table.at("rules")) {
+            const auto layers=pairName(rule.at("layers"));
+            if(rules.count(layers)) throw std::invalid_argument("Duplicate HBT footprint layer pair");
+            auto& rows=rules[layers];
+            for(const auto& item:rule.at("reservations")) {
+                const auto off=pairOf(item.at("offset"));
+                const int die=integer(item.at("die")),dl=integer(item.at("layer_offset"));
+                auto type=item.at("kind").get<std::string>();
+                const double amount=weight(item,"demand");
+                if((die!=0 && die!=1) || (type!="WIRE" && type!="VIA") || amount<=0)
+                    throw std::invalid_argument("Invalid HBT landing reservation");
+                rows.push_back({die,dl,int(off[0]),int(off[1]),type=="WIRE"?GREdgeType::WIRE:GREdgeType::VIA,amount});
+            }
+        }
+    }
     if(b.count("l1_die_weights")) {
         auto weights=pairOf(b.at("l1_die_weights"));
         for(int d:{0,1}) {
@@ -122,6 +150,28 @@ RoutingGraph::RoutingGraph(const MultiDieDesign& m):model(m) {
             }
             Edge edge(pts[0],pts[1],GREdgeType::HBT,s.id);
             if(!blocked) {
+                if(coupled) {
+                    const auto rule=rules.find(pairName(pair));
+                    if(rule==rules.end()) throw std::invalid_argument("Missing HBT landing reservation rule");
+                    Demand extra;
+                    bool fits=true;
+                    for(const auto& r:rule->second) {
+                        auto p=pts[r.die];
+                        const auto& grid=m.dies[r.die]->grid;
+                        const int64_t x=int64_t(p.x)+r.dx,y=int64_t(p.y)+r.dy,l=int64_t(p.layerIdx)+r.dl;
+                        if(x<0 || x>=grid.getSize(0) || y<0 || y>=grid.getSize(1) || l<0 || l>=grid.getNumLayers()) {fits=false;break;}
+                        p=GRPoint(r.die,int(l),int(x),int(y));
+                        auto q=p;
+                        if(r.type==GREdgeType::WIRE) ++q[grid.getLayerDirection(p.layerIdx)];
+                        else ++q.layerIdx;
+                        const Edge reserved(p,q,r.type);
+                        if(!allowed(-1,reserved)) {fits=false;break;}
+                        extra[resourceId(reserved)]+=r.demand;
+                    }
+                    // 越界或非法层对使这一种着陆失效，其他真实层对仍可独立使用。
+                    if(!fits) continue;
+                    hbtFootprints.emplace(edge,std::vector<std::pair<Resource,double>>(extra.begin(),extra.end()));
+                }
                 stored.transitions.push_back(edge);
                 for(auto p:pts) {
                     landings[p].push_back(edge);
@@ -132,11 +182,12 @@ RoutingGraph::RoutingGraph(const MultiDieDesign& m):model(m) {
                 if(jump) distancePrice=std::min(distancePrice,hbtWeight/jump);
             }
         }
-        if(!blocked) {
+        if(!stored.transitions.empty()) {
             boostPoint xy(stored.bonded[0],stored.bonded[1]);
             siteIndex.insert({boostBox(xy,xy),stored.id});
         }
-        if(!blocked && stored.transitions.empty()) throw std::invalid_argument("Missing landing pair");
+        if(!blocked && stored.transitions.empty() && (!coupled || s.owner>=0 || item.at("layers").empty()))
+            throw std::invalid_argument("Missing legal landing pair");
     }
     // 收缩 XY 得到 Die/层上的剩余代价下界；与格中心位移下界不重复相加。
     const int layers=m.dies[0]->grid.getNumLayers()+m.dies[1]->grid.getNumLayers();
@@ -195,7 +246,42 @@ std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chose
     Measured measured(Timing::HbtSearch);
     // 只给初解选择最近可用站点。精确 DP 独立枚举全阵列。
     if(siteIndex.empty()) return {};
+    const bool incremental=model.config.value("enable_incremental_seed_sites",false) && !coupled &&
+        std::all_of(chosen.begin(),chosen.end(),[](const Edge& e){return e.type==GREdgeType::HBT;});
+    std::set<int> chosenIds;
+    if(incremental) {
+        if(!chosen.empty() && !available(net,chosen)) return {};
+        for(const auto& edge:chosen) chosenIds.insert(edge.site);
+    }
+    auto canAppend=[&](const Edge& h) {
+        if(!incremental) {
+            auto test=chosen;test.insert(h);
+            return available(net,test);
+        }
+        // 整个函数内外部占用不变。已有同一物理边的并集不增加需求；
+        // 同站点采用不同着陆层对、间距冲突和其他网占用仍须明确拒绝。
+        if(chosen.count(h)) return true;
+        if(chosenIds.count(h.site) || !available(net,{h})) return false;
+        for(auto conflict:spacingNeighbors(h.site)) if(chosenIds.count(conflict)) return false;
+        return true;
+    };
     boostPoint point(target[0],target[1]);
+    if(accessWeight>0) {
+        for(size_t k=std::min<size_t>(8,siteIndex.size());;k=std::min(2*k,siteIndex.size())) {
+            std::pair<double,int> best{std::numeric_limits<double>::infinity(),-1};
+            std::vector<Edge> first;
+            for(const auto* site:sitesNearRegion(target,target,k)) {
+                if(excluded.count(site->id)) continue;
+                const double distance=std::abs(site->bonded[0]-target[0])+std::abs(site->bonded[1]-target[1]);
+                for(const auto& h:site->transitions) {
+                    if(!canAppend(h)) continue;
+                    const auto key=std::make_pair(distance*wireWeight/model.units+landingRisk(h),site->id);
+                    if(key<best) {best=key;first={h};}
+                }
+            }
+            if(!first.empty() || k==siteIndex.size()) return first;
+        }
+    }
     if(model.config.value("routing_mode",std::string("exact"))=="fast" &&
        model.config.value("enable_hbt_index",true)) {
         const bool preserveTies=model.config.value("preserve_seed_ties",true);
@@ -217,8 +303,7 @@ std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chose
                 if(!visited.insert(it->second).second) continue;
                 Profile::count(Event::HbtSites);
                 for(const auto& h:sites.at(it->second).transitions) {
-                    Edges test=chosen;test.insert(h);
-                    if(!available(net,test)) continue;
+                    if(!canAppend(h)) continue;
                     if(!preserveTies) return {h};
                     if(!first.empty()) tie=true;
                     else {first.push_back(h);nearest=score;}
@@ -236,8 +321,7 @@ std::vector<Edge> RoutingGraph::seedLanding(int net,XY target,const Edges& chose
         Profile::count(Event::HbtSites);
         if(excluded.count(it->second)) continue;
         for(const auto& h:sites.at(it->second).transitions) {
-            Edges test=chosen;test.insert(h);
-            if(available(net,test)) return {h};
+            if(canAppend(h)) return {h};
         }
     }
     return {};
@@ -261,6 +345,25 @@ double RoutingGraph::singleHbtLowerBound(GRPoint a,GRPoint b,const Edge& h) cons
     // 端点至着陆格中心的两段线属于不同 Die。只计算独立的最低平面位移与换层次数。
     return hbtWeight+wire*wireWeight/model.units+
            viaWeight*(std::abs(a.layerIdx-u.layerIdx)+std::abs(b.layerIdx-v.layerIdx));
+}
+double RoutingGraph::landingRisk(const Edge& edge,const ResourceReadView* view) const {
+    if(!accessWeight) return 0;
+    double both=1.;
+    for(auto p:{edge.a,edge.b}) {
+        const auto& grid=model.dies[p.dieIdx]->grid;
+        const int axis=grid.getLayerDirection(p.layerIdx);
+        double cap=0,free=0;
+        for(int sign:{-1,1}) {
+            auto q=p;q[axis]+=sign;
+            Edge wire(p,q,GREdgeType::WIRE);
+            if(!allowed(-1,wire)) continue;
+            const Resource id=resourceId(wire);
+            const double c=capacity(id);
+            cap+=c;free+=std::max(0.,c-externalDemand(id,view));
+        }
+        both=std::min(both,cap>0?free/cap:0.);
+    }
+    return accessWeight*(1.-both);
 }
 std::vector<Edge> RoutingGraph::neighbors(GRPoint p,int net) const {
     if(!validPoint(p)) throw std::out_of_range("Invalid search state");
@@ -315,6 +418,8 @@ Demand RoutingGraph::computeDemand(const Range& edges) const {
     Demand res;
     for(const auto& edge:edges) {
         res[resourceId(edge)]+=1;
+        if(coupled && edge.type==GREdgeType::HBT)
+            for(const auto& item:hbtFootprints.at(edge)) res[item.first]+=item.second;
         if(edge.type!=GREdgeType::VIA) continue;
         for(auto p:{edge.a,edge.b}) {
             const auto footprint=landingFootprint(p);
@@ -367,15 +472,17 @@ bool RoutingGraph::collectHbtSites(int net,const Range& edges,std::vector<int>& 
     std::sort(chosen.begin(),chosen.end());
     return std::adjacent_find(chosen.begin(),chosen.end())==chosen.end();
 }
-bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vector<int>* released) const {
+bool RoutingGraph::availableSites(const std::vector<int>& chosen,const std::vector<int>* released,const ResourceReadView* view) const {
     auto alreadyUsed=[&](int id) {
+        if(view && view->provisional && std::binary_search(view->provisional->sites.begin(),view->provisional->sites.end(),id)) return true;
         return used.count(siteId(id)) && !(released && std::binary_search(released->begin(),released->end(),id));
     };
     for(int id:chosen) {
-        if(alreadyUsed(id)) return false;
+        if(alreadyUsed(id)) {Profile::count(Event::HbtOccupied);return false;}
         for(int other:spacingNeighbors(id))
-            if(std::binary_search(chosen.begin(),chosen.end(),other) || alreadyUsed(other) || sites.at(other).owner>=0)
-                return false;
+            if(std::binary_search(chosen.begin(),chosen.end(),other) || alreadyUsed(other) || sites.at(other).owner>=0) {
+                Profile::count(Event::HbtSpacing);return false;
+            }
     }
     return true;
 }
@@ -393,53 +500,98 @@ std::vector<int> RoutingGraph::spacingNeighbors(int id) const {
     }
     return candidates;
 }
-bool RoutingGraph::available(int net,const Edges& edges) const {
+void RoutingGraph::checkView(int net,const ResourceReadView* view) const {
+    if(view && (view->graph!=this || view->net!=net || view->epoch!=ledgerVersion))
+        throw std::logic_error("Stale resource view or incorrect net owner");
+}
+const std::vector<int>* RoutingGraph::releasedSites(const ResourceReadView* view) {
+    return view && view->old?&view->old->hbtSites():nullptr;
+}
+double RoutingGraph::externalDemand(Resource id,const ResourceReadView* view) const {
+    const auto it=used.find(id);
+    double total=it==used.end()?0.:it->second;
+    if(view && view->provisional) {
+        const auto& added=view->provisional->demand;
+        const auto row=std::lower_bound(added.begin(),added.end(),id,
+            [](const std::pair<Resource,double>& r,Resource key){return r.first<key;});
+        if(row!=added.end() && row->first==id) total+=row->second;
+    }
+    if(!view || !view->old) return total;
+    const auto& demand=view->old->resources();
+    const auto old=std::lower_bound(demand.begin(),demand.end(),id,
+        [](const std::pair<Resource,double>& item,Resource key){return item.first<key;});
+    if(old==demand.end() || old->first!=id) return total;
+    const double remainder=total-old->second;
+    if(remainder < -1e-12) throw std::logic_error("Released demand exceeds snapshot");
+    return std::abs(remainder)<1e-12?0.:remainder;
+}
+bool RoutingGraph::available(int net,const Edges& edges,const ResourceReadView* view) const {
+    checkView(net,view);
     Measured measured(Timing::Available);
     std::vector<int> chosen;
-    if(!collectHbtSites(net,edges,chosen) || !availableSites(chosen)) return false;
+    if(!collectHbtSites(net,edges,chosen) || !availableSites(chosen,releasedSites(view),view)) return false;
     for(const auto& r:resources(edges)) {
-        auto it=used.find(r.first);
-        if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
+        if(r.second+externalDemand(r.first,view)>capacity(r.first)+1e-12) return false;
     }
     return true;
 }
-bool RoutingGraph::available(const RouteResourceSummary& prepared) const {
+bool RoutingGraph::available(const RouteResourceSummary& prepared,const ResourceReadView* view) const {
+    checkView(prepared.net,view);
     Measured measured(Timing::Available);
     if(prepared.graph!=this) throw std::invalid_argument("Route summary belongs to another resource graph");
-    if(!availableSites(prepared.sites)) return false;
+    if(!availableSites(prepared.sites,releasedSites(view),view)) return false;
     for(const auto& r:prepared.demand) {
-        auto it=used.find(r.first);
-        if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
+        if(r.second+externalDemand(r.first,view)>capacity(r.first)+1e-12) return false;
     }
     return true;
 }
-bool RoutingGraph::evaluateCompact(int net,const std::vector<Edge>& edges,PathQuality& quality) const {
+bool RoutingGraph::evaluateCompact(int net,const std::vector<Edge>& edges,PathQuality& quality,const ResourceReadView* view) const {
+    checkView(net,view);
     Measured measured(Timing::Available);
-    if(!collectHbtSites(net,edges,quality.hbt) || !availableSites(quality.hbt)) return false;
-    const auto demand=computeDemand(edges);
+    quality=PathQuality{};
+    if(!collectHbtSites(net,edges,quality.hbt) || !availableSites(quality.hbt,releasedSites(view),view)) return false;
+    return scoreCompact(edges,computeDemand(edges),quality,view);
+}
+bool RoutingGraph::evaluateIncrement(int net,const std::vector<Edge>& parent,const Demand& parentDemand,
+    const std::vector<Edge>& combined,Demand& result,PathQuality& quality) const {
+    Measured measured(Timing::Available);
+    quality=PathQuality{};
+    if(!collectHbtSites(net,combined,quality.hbt) || !availableSites(quality.hbt)) return false;
+    std::vector<Edge> added;
+    std::set_difference(combined.begin(),combined.end(),parent.begin(),parent.end(),std::back_inserter(added));
+    if(added.size()+parent.size()!=combined.size()) throw std::logic_error("Invalid incremental DP parent");
+    auto delta=computeDemand(added);
+    // 不相交的资源键在规范边序列中的加法次序完全相同。多条 Via 或 HBT 的金属预留
+    // 命中同一资源时回退到原有的规范求和，保持浮点边界上的容量判断及标签排序一致。
+    const bool overlap=std::any_of(delta.begin(),delta.end(),[&](const Demand::value_type& r){return parentDemand.count(r.first);});
+    if(overlap) result=computeDemand(combined);
+    else {result=parentDemand;result.insert(delta.begin(),delta.end());}
+    return scoreCompact(combined,result,quality,nullptr);
+}
+bool RoutingGraph::scoreCompact(const std::vector<Edge>& edges,const Demand& demand,PathQuality& quality,const ResourceReadView* view) const {
     for(const auto& r:demand) {
-        auto it=used.find(r.first);
-        if(r.second+(it==used.end()?0:it->second)>capacity(r.first)+1e-12) return false;
+        if(r.second+externalDemand(r.first,view)>capacity(r.first)+1e-12) return false;
     }
     quality.cost=baseCost(edges,demand);
     for(const auto& r:demand) quality.cost+=extraPrice(r.first,r.second);
     for(const auto& edge:edges) {
         if(edge.type==GREdgeType::VIA) ++quality.vias;
         if(edge.type==GREdgeType::WIRE) quality.wire+=wireUm(edge);
+        if(accessWeight>0 && edge.type==GREdgeType::HBT) quality.cost+=landingRisk(edge,view);
     }
     return true;
 }
-bool RoutingGraph::extendPath(int net,const Edges& path,Edges& tree,Demand& demand,std::vector<int>& hbt) const {
+bool RoutingGraph::extendPath(int net,const Edges& path,Edges& tree,Demand& demand,std::vector<int>& hbt,const ResourceReadView* view) const {
+    checkView(net,view);
     Measured measured(Timing::Available);
     Edges added;
     std::set_difference(path.begin(),path.end(),tree.begin(),tree.end(),std::inserter(added,added.end()));
     auto nextHbt=hbt;
-    if(!collectHbtSites(net,added,nextHbt) || !availableSites(nextHbt)) return false;
+    if(!collectHbtSites(net,added,nextHbt) || !availableSites(nextHbt,releasedSites(view),view)) return false;
     const auto increase=computeDemand(added);
     for(const auto& r:increase) {
         const auto local=demand.find(r.first);
-        const auto external=used.find(r.first);
-        const double total=r.second+(local==demand.end()?0.:local->second)+(external==used.end()?0.:external->second);
+        const double total=r.second+(local==demand.end()?0.:local->second)+externalDemand(r.first,view);
         if(total>capacity(r.first)+1e-12) return false;
     }
     tree.insert(added.begin(),added.end());
@@ -478,22 +630,37 @@ double RoutingGraph::extraPrice(Resource id,double demand) const {
     const auto it=dynamicPrice.find(id);
     return it==dynamicPrice.end()?0:it->second*demand;
 }
-double RoutingGraph::stepCost(int net,const Edge& edge) const {
+void RoutingGraph::priceBlockedRequests(const std::map<Resource,unsigned>& requests,double step,double decay,double ceiling) {
+    if(!std::isfinite(step) || step<0 || !(decay>=0 && decay<=1) || !std::isfinite(ceiling) || ceiling<0)
+        throw std::invalid_argument("Invalid failure pressure price parameters");
+    // 被拒绝的搜索请求是竞争信号。价格只用于后续候选排序，基础代价和容量不变。
+    for(const auto& item:requests) {
+        auto& value=dynamicPrice[item.first];
+        value=std::min(ceiling,decay*value+step*std::log1p(item.second));
+    }
+}
+double RoutingGraph::stepCost(int net,const Edge& edge,const ResourceReadView* view) const {
+    checkView(net,view);
     Measured measured(Timing::StepCost);
     const auto inf=std::numeric_limits<double>::infinity();
-    if(edge.type==GREdgeType::HBT) return available(net,{edge})?cost({edge})+extraPrice(resourceId(edge)):inf;
+    if(edge.type==GREdgeType::HBT) {
+        if(!available(net,{edge},view)) return inf;
+        double price=cost({edge})+extraPrice(resourceId(edge))+landingRisk(edge,view);
+        if(coupled) for(const auto& r:hbtFootprints.at(edge)) price+=extraPrice(r.first,r.second);
+        return price;
+    }
     const auto& die=*model.dies[edge.a.dieIdx];
     auto bounds=[&](GRPoint p,double demand) {
         const auto r=die.grid.getEdge(p.layerIdx,p.x,p.y);
-        if(r.getResource()+1e-12<demand) return inf;
         auto id=pointId(p);
+        const double remaining=view?r.capacity-externalDemand(id,view):r.getResource();
+        if(remaining+1e-12<demand) return inf;
         return resourcePrice(id,r.capacity,demand)+extraPrice(id,demand);
     };
     if(edge.type==GREdgeType::WIRE) return wireWeight*wireUm(edge)+bounds(edge.a,1);
     auto id=resourceId(edge);
     double cap=capacity(id);
-    auto it=used.find(id);
-    if((it==used.end()?0:it->second)+1>cap+1e-12) return inf;
+    if(externalDemand(id,view)+1>cap+1e-12) return inf;
     double total=viaWeight+resourcePrice(id,cap,1)+extraPrice(id);
     for(auto p:{edge.a,edge.b}) {
         const auto footprint=landingFootprint(p);
@@ -543,20 +710,151 @@ PreparedRoute RoutingGraph::prepareRoute(int net,const Route& route) const {
     }
     return summary;
 }
-void RoutingGraph::validate(int net,const Route& route) const {
+void RoutingGraph::validate(int net,const Route& route,const ResourceReadView* view) const {
+    checkView(net,view);
     Measured measured(Timing::Validate);
-    if(!validPoint(route.root)||!available(net,route.edges)) throw std::invalid_argument("Infeasible route resources");
+    if(!validPoint(route.root)||!available(net,route.edges,view)) throw std::invalid_argument("Infeasible route resources");
     validateConnectivity(net,route);
 }
 void RoutingGraph::commit(int net,const Route& route) {
     if(owned.at(net)) throw std::logic_error("Double commit");
     commitPrepared(net,prepareRoute(net,route));
 }
+// 先在私有副本中更新受影响资源的所有者。预留空键后，真正发布时只交换向量。
+class RoutingGraph::OwnerEdit {
+    OwnerMap& index;
+    bool enabled;
+    std::map<Resource,std::vector<int>> staged;
+    std::vector<Resource> inserted;
+public:
+    explicit OwnerEdit(RoutingGraph& g):index(g.reverseOwners),enabled(g.indexOwners) {}
+    void change(int net,const PreparedRoute& old,const PreparedRoute& next) {
+        if(!enabled) return;
+        static const std::vector<std::pair<Resource,double>> none;
+        const auto& a=old?old->resources():none;
+        const auto& b=next?next->resources():none;
+        size_t i=0,j=0;
+        while(i<a.size() || j<b.size()) {
+            if(i<a.size() && j<b.size() && a[i].first==b[j].first) {++i;++j;continue;}
+            const bool remove=j==b.size() || (i<a.size() && a[i].first<b[j].first);
+            const auto key=remove?a[i++].first:b[j++].first;
+            auto dest=staged.emplace(key,std::vector<int>{});
+            if(dest.second && index.count(key)) dest.first->second=index.at(key);
+            auto& owners=dest.first->second;
+            auto pos=std::lower_bound(owners.begin(),owners.end(),net);
+            if(remove) {
+                if(pos==owners.end() || *pos!=net) throw std::logic_error("Missing resource owner");
+                owners.erase(pos);
+            } else {
+                if(pos!=owners.end() && *pos==net) throw std::logic_error("Duplicate resource owner");
+                owners.insert(pos,net);
+            }
+        }
+    }
+    void reserve() {
+        inserted.reserve(staged.size());
+        for(const auto& entry:staged) if(!entry.second.empty() && index.emplace(entry.first,std::vector<int>{}).second)
+            inserted.push_back(entry.first);
+    }
+    void publish() {
+        for(auto& entry:staged)
+            if(entry.second.empty()) index.erase(entry.first);else index.at(entry.first).swap(entry.second);
+        inserted.clear();
+    }
+    ~OwnerEdit() {for(auto id:inserted) index.erase(id);}
+};
+const std::vector<int>& RoutingGraph::users(Resource id) const {
+    static const std::vector<int> empty;
+    auto it=reverseOwners.find(id);
+    return it==reverseOwners.end()?empty:it->second;
+}
+std::vector<Resource> RoutingGraph::blockingResources(int net,const Edge& edge,const ResourceReadView* view) const {
+    checkView(net,view);
+    std::vector<Resource> blocked;
+    if(!allowed(net,edge)) return blocked;
+    for(const auto& r:resources({edge}))
+        if(!users(r.first).empty() && externalDemand(r.first,view)+r.second>capacity(r.first)+1e-12)
+            blocked.push_back(r.first);
+    if(edge.type==GREdgeType::HBT) {
+        if(externalDemand(siteId(edge.site),view)>0) blocked.push_back(siteId(edge.site));
+        for(int neighbor:spacingNeighbors(edge.site))
+            if(externalDemand(siteId(neighbor),view)>0) blocked.push_back(siteId(neighbor));
+    }
+    std::sort(blocked.begin(),blocked.end());
+    blocked.erase(std::unique(blocked.begin(),blocked.end()),blocked.end());
+    return blocked;
+}
+ResourceReadView RoutingGraph::groupView(int net,const std::vector<int>& group,const std::vector<PreparedRoute>& provisional) const {
+    std::set<int> ids(group.begin(),group.end());
+    if(ids.size()!=group.size() || !ids.count(net)) throw std::invalid_argument("Invalid resource view group");
+    std::shared_ptr<RouteResourceSummary> summary(new RouteResourceSummary(this,net));
+    Demand removed;
+    for(int id:group) if(const auto& old=owned.at(id)) {
+        for(const auto& item:old->demand) removed[item.first]+=item.second;
+        summary->sites.insert(summary->sites.end(),old->sites.begin(),old->sites.end());
+    }
+    std::sort(summary->sites.begin(),summary->sites.end());
+    summary->demand.assign(removed.begin(),removed.end());
+    ResourceReadView view(this,net,ledgerVersion,std::move(summary));
+    if(!provisional.empty()) {
+        std::shared_ptr<RouteResourceSummary> extra(new RouteResourceSummary(this,net));
+        Demand demand;
+        for(const auto& route:provisional) {
+            if(!route || route->graph!=this || !ids.erase(route->net) || route->net==net)
+                throw std::invalid_argument("Invalid provisional group route");
+            extra->sites.insert(extra->sites.end(),route->sites.begin(),route->sites.end());
+            for(const auto& r:route->demand) demand[r.first]+=r.second;
+        }
+        extra->demand.assign(demand.begin(),demand.end());
+        std::sort(extra->sites.begin(),extra->sites.end());
+        view.provisional=std::move(extra);
+    }
+    return view;
+}
+bool RoutingGraph::replaceGroup(const std::vector<int>& ids,const std::vector<PreparedRoute>& routes) {
+    if(ids.empty() || ids.size()!=routes.size()) throw std::invalid_argument("Invalid route transaction group");
+    auto view=groupView(ids.front(),ids);
+    Demand additions;
+    std::vector<int> sites;
+    OwnerEdit index(*this);
+    for(size_t i=0;i<ids.size();++i) {
+        const auto& next=routes[i];
+        if(!next || next->graph!=this || next->net!=ids[i]) throw std::invalid_argument("Invalid group route owner");
+        sites.insert(sites.end(),next->sites.begin(),next->sites.end());
+        for(const auto& r:next->demand) additions[r.first]+=r.second;
+        index.change(ids[i],owned.at(ids[i]),next);
+    }
+    std::sort(sites.begin(),sites.end());
+    if(std::adjacent_find(sites.begin(),sites.end())!=sites.end() || !availableSites(sites,releasedSites(&view))) return false;
+    for(const auto& r:view.old->demand) additions.emplace(r.first,0.);
+    for(auto& r:additions) {
+        r.second+=externalDemand(r.first,&view);
+        if(r.second>capacity(r.first)+1e-12) return false;
+    }
+    index.reserve();
+    std::vector<Resource> inserted;
+    inserted.reserve(additions.size());
+    try {
+        for(const auto& r:additions) if(r.second>0 && used.emplace(r.first,0.).second) inserted.push_back(r.first);
+    } catch(...) {for(auto id:inserted) used.erase(id);throw;}
+    for(const auto& r:additions) {
+        if(r.second>0) used.at(r.first)=r.second;else used.erase(r.first);
+        if(r.first<volume) {
+            const auto loc=location(r.first);
+            model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,r.second);
+        }
+    }
+    index.publish();
+    for(size_t i=0;i<ids.size();++i) owned[ids[i]]=routes[i];
+    ++ledgerVersion;
+    return true;
+}
 void RoutingGraph::commitPrepared(int net,const PreparedRoute& prepared) {
     Measured measured(Timing::Commit);
     auto& owner=owned.at(net);
     if(owner) throw std::logic_error("Double commit");
     if(!prepared || net!=prepared->net || !available(*prepared)) throw std::invalid_argument("Infeasible route resources");
+    OwnerEdit index(*this);index.change(net,nullptr,prepared);index.reserve();
     // 预分配全部键。提交期间没有新的内存分配，异常时只清理本次新增键。
     std::vector<Resource> inserted;
     inserted.reserve(prepared->demand.size());
@@ -571,7 +869,9 @@ void RoutingGraph::commitPrepared(int net,const PreparedRoute& prepared) {
     }
     for(const auto& r:prepared->demand) used.at(r.first)+=r.second;
     publishDemand(*prepared);
+    index.publish();
     owner=prepared;
+    ++ledgerVersion;
 }
 bool RoutingGraph::replacePrepared(int net,const PreparedRoute& prepared) {
     auto& owner=owned.at(net);
@@ -595,6 +895,7 @@ bool RoutingGraph::replacePrepared(int net,const PreparedRoute& prepared) {
         if(total>capacity(id)+1e-12) return false;
         updates.emplace_back(id,std::abs(total)<1e-12?0.:total);
     }
+    OwnerEdit index(*this);index.change(net,owner,prepared);index.reserve();
     std::vector<Resource> inserted;
     inserted.reserve(updates.size());
     try {
@@ -614,13 +915,16 @@ bool RoutingGraph::replacePrepared(int net,const PreparedRoute& prepared) {
             model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,item.second);
         }
     }
+    index.publish();
     owner=prepared;
+    ++ledgerVersion;
     return true;
 }
 void RoutingGraph::release(int net) {
     Measured measured(Timing::Release);
     auto& owner=owned.at(net);
     if(!owner) throw std::logic_error("Release by non-owner");
+    OwnerEdit index(*this);index.change(net,owner,nullptr);index.reserve();
     for(const auto& r:owner->demand) {
         auto it=used.find(r.first);
         if(it==used.end() || it->second+1e-12<r.second) throw std::logic_error("Inconsistent resource ledger");
@@ -631,7 +935,9 @@ void RoutingGraph::release(int net) {
         if(std::abs(it->second)<1e-12) used.erase(it);
     }
     publishDemand(*owner);
+    index.publish();
     owner.reset();
+    ++ledgerVersion;
 }
 void RoutingGraph::publishDemand(const RouteResourceSummary& changed) {
     for(const auto& r:changed.demand) {
@@ -640,6 +946,24 @@ void RoutingGraph::publishDemand(const RouteResourceSummary& changed) {
         auto it=used.find(r.first);
         model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,it==used.end()?0:it->second);
     }
+}
+void RoutingGraph::restoreCheckpointDemand(const Occupancy& recorded) {
+    if(used.size()!=recorded.size()) throw std::invalid_argument("Checkpoint resource keys disagree");
+    for(const auto& r:recorded) {
+        auto current=used.find(r.first);
+        if(current==used.end() || !std::isfinite(r.second) || r.second<0 ||
+           std::abs(current->second-r.second)>1e-10*std::max(1.,r.second) || r.second>capacity(r.first)+1e-12)
+            throw std::invalid_argument("Checkpoint demand does not replay");
+    }
+    // 逐树回放通过后恢复冻结值的原始浮点位模式，消除提交顺序不同的加法舍入差异。
+    for(const auto& r:recorded) {
+        used.at(r.first)=r.second;
+        if(r.first<volume) {
+            auto loc=location(r.first);
+            model.dies[loc.die]->grid.setWireDemand(loc.layer,loc.x,loc.y,r.second);
+        }
+    }
+    ++ledgerVersion;
 }
 void RoutingGraph::captureCongestion() {
     for(int d=0;d<2;++d) {

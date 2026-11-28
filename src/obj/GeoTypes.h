@@ -12,12 +12,14 @@ public:
     }
 
     //  constructors
+    BoxOnLayer() : layerIdx(-1) {}
     template <typename... Args>
-    BoxOnLayer(int layerIndex = -1, Args... params) : layerIdx(layerIndex), utils::BoxT<DBU>(params...) {}
+    BoxOnLayer(int layerIndex, Args... params) : utils::BoxT<DBU>(params...), layerIdx(layerIndex) {}
 
     // inherit setters from utils::BoxT in batch
+    void Set() { Set(-1); }
     template <typename... Args>
-    void Set(int layerIndex = -1, Args... params) {
+    void Set(int layerIndex, Args... params) {
         layerIdx = layerIndex;
         utils::BoxT<DBU>::Set(params...);
     }

@@ -39,6 +39,8 @@ def main():
         if not stats_path.exists():
             return case,dict(status='GLOBAL_RUN_ERROR')
         stats=json.loads(stats_path.read_text())
+        if stats.get('hbt_budget_excess',0):
+            return case,dict(status='GLOBAL_BUDGET_UNMET')
         if not stats.get('metrics'):
             return case,dict(status='GLOBAL_'+stats['status'])
         directory=out/case

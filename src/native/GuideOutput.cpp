@@ -81,6 +81,16 @@ Json writeSolution(const RoutingGraph& g,const std::vector<Route>& routes,const 
                 Json landing;
                 landing["id"]=s.id;landing["name"]="NC3DH_"+std::to_string(net.id)+"_"+std::to_string(s.id);
                 landing["xy"]=s.local[d];landing["layer"]=g.model.dies[d]->grid.getLayerName(p.layerIdx);
+                if(g.model.config.value("enable_hbt_footprint",false)) {
+                    landing["additional_reservations"]=Json::array();
+                    for(const auto& r:g.resources({edge})) {
+                        const auto loc=g.location(r.first);
+                        if(loc.type==GREdgeType::HBT || loc.die!=d) continue;
+                        landing["additional_reservations"].push_back({
+                            {"kind",loc.type==GREdgeType::WIRE?"WIRE":"VIA"},{"layer",loc.layer},
+                            {"x",loc.x},{"y",loc.y},{"demand",r.second}});
+                    }
+                }
                 desc[i]["landings"].push_back(landing);pins[i].push_back({p});
                 hbt<<'\t'<<s.local[d][0]<<'\t'<<s.local[d][1]<<'\t'<<landing["layer"].get<std::string>()<<'\t'<<desc[i]["name"].get<std::string>();
             }

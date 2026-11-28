@@ -1,49 +1,84 @@
 #include "IncrementalRoute.h"
 #include "ConflictOptimizer.h"
 #include "Profile.h"
+#include "ParallelMaze.h"
+#include "MazeExperiment.h"
 #include "SeedTopology.h"
 #include "SparseMaze.h"
+#include "TopologyRefinement.h"
+#include "FailureRepair.h"
 #include <future>
 #include <numeric>
+#include <sys/resource.h>
 
 namespace native3d {
+IncumbentSolution::IncumbentSolution(RoutingGraph& g):current(g.model.nets.size()),graph(g),
+    mode(g.model.config.value("optimization_mode",std::string("baseline"))),
+    protect(g.model.config.value("prefer_hbt_nonincrease",false)) {
+    const auto& cfg=g.model.config;
+    if(mode!="baseline" && mode!="joint" && mode!="budgeted") throw std::invalid_argument("Unknown optimization_mode");
+    if(mode!="baseline" && protect) throw std::invalid_argument("Joint or budgeted mode requires prefer_hbt_nonincrease=false");
+    if(mode=="budgeted") {
+        int limit=integer(cfg.at("hbt_budget"));
+        if(limit<0) throw std::invalid_argument("Negative HBT budget");
+        budget=limit;
+    } else if(cfg.count("hbt_budget")) throw std::invalid_argument("hbt_budget requires budgeted mode");
+}
+size_t IncumbentSolution::after(const PreparedRoute& old,const PreparedRoute& candidate) const {
+    const size_t previous=old?old->hbtSites().size():0;
+    if(previous>hbtTotal) throw std::logic_error("Inconsistent incumbent HBT total");
+    return hbtTotal-previous+(candidate?candidate->hbtSites().size():0);
+}
+bool IncumbentSolution::improves(const PreparedRoute& old,const PreparedRoute& candidate,const PreparedRoute& best) const {
+    if(old && protect && candidate->hbtSites().size()>old->hbtSites().size()) return false;
+    if(!best) return true; // 接通真实终端优先，超预算的完整初解进入显式修复。
+    auto a=excess(after(old,candidate)),b=excess(after(old,best));
+    return a<b || (a==b && candidate->cost()+1e-9<best->cost());
+}
+void IncumbentSolution::publish(int net,Route&& route,PreparedRoute summary) {
+    auto& entry=current.at(net);
+    const auto next=after(entry.summary,summary);
+    graph.commitPrepared(net,summary);
+    hbtTotal=next;
+    entry.route.edges.swap(route.edges);
+    entry.route.root=route.root;
+    entry.summary=std::move(summary);
+    ++entry.version;
+}
+bool IncumbentSolution::replace(int net,unsigned version,Route&& route,PreparedRoute summary) {
+    auto& entry=current.at(net);
+    if(entry.version!=version) return false;
+    if(!entry.summary) {
+        if(!graph.available(*summary)) return false;
+        publish(net,std::move(route),std::move(summary));
+        return true;
+    }
+    const auto next=after(entry.summary,summary);
+    if(!graph.replacePrepared(net,summary)) return false;
+    hbtTotal=next;
+    // 账本已发布，此后的交换、摘要移动及版本更新均不分配内存。
+    entry.route.edges.swap(route.edges);
+    entry.route.root=route.root;
+    entry.summary=std::move(summary);
+    ++entry.version;
+    return true;
+}
+Json IncumbentSolution::metrics() const {
+    double objective=0,length=0;
+    size_t vias=0,hbt=0,connected=0;
+    for(const auto& n:current) if(n.summary) {
+        objective+=n.summary->cost();length+=n.summary->wirelength();
+        vias+=n.summary->vias();hbt+=n.summary->hbtSites().size();++connected;
+    }
+    if(hbt!=hbtTotal) throw std::logic_error("Mismatch between HBT count and incumbent trees");
+    return {{"best_feasible",connected==current.size() && !excess(hbt)?Json(objective):Json(nullptr)},
+            {"hbt_budget_excess",excess(hbt)},{"base_objective_connected_routes",objective},
+            {"routed_nets",connected},{"wirelength_um",length},{"via_count",vias},{"used_hbt",hbt},
+            {"resource_conflicts",0}};
+}
 namespace {
 using Clock=std::chrono::steady_clock;
-struct NetRoute {
-    Route route{{0,0,0},{}};
-    PreparedRoute summary;
-    Routes alternatives;
-    FastPatternCache pattern;
-    unsigned version=0,failures=0;
-};
-struct IncumbentSolution {
-    std::vector<NetRoute> current;
-    RoutingGraph& graph;
-    explicit IncumbentSolution(RoutingGraph& graph):current(graph.model.nets.size()),graph(graph) {}
-    void publish(int net,Route&& route,PreparedRoute summary) {
-        graph.commitPrepared(net,summary);
-        auto& entry=current[net];
-        entry.route=std::move(route);
-        entry.summary=std::move(summary);
-        ++entry.version;
-    }
-    Json metrics() const {
-        double objective=0,length=0;
-        size_t vias=0,hbt=0,connected=0;
-        for(const auto& n:current) if(n.summary) {
-            objective+=n.summary->cost();length+=n.summary->wirelength();
-            vias+=n.summary->vias();hbt+=n.summary->hbtSites().size();++connected;
-        }
-        return {{"best_feasible",connected==current.size()?Json(objective):Json(nullptr)},
-                {"routed_nets",connected},{"wirelength_um",length},{"via_count",vias},{"used_hbt",hbt},
-                {"resource_conflicts",0}};
-    }
-};
 bool crosses(const GlobalNet& net) {return net.localNet[0]>=0 && net.localNet[1]>=0;}
-bool protectsSites(const RoutingGraph& graph,const PreparedRoute& old,const PreparedRoute& candidate) {
-    if(!old || !graph.model.config.value("prefer_hbt_nonincrease",false)) return true;
-    return candidate->hbtSites().size()<=old->hbtSites().size();
-}
 double wirePressure(const RoutingGraph& graph,const RouteResourceSummary& summary) {
     double peak=0;
     for(const auto& r:summary.resources()) {
@@ -76,6 +111,7 @@ std::vector<int> initialOrder(const RoutingGraph& g,const std::string& mode) {
     return order;
 }
 Json optimizeConflicts(IncumbentSolution& solution) {
+    Measured solveTime(Timing::Conflict);
     auto& graph=solution.graph;
     const auto& cfg=graph.model.config;
     const int maxGroup=cfg.value("local_exact_threshold",8);
@@ -95,8 +131,8 @@ Json optimizeConflicts(IncumbentSolution& solution) {
     if(cfg.value("enable_dynamic_pricing",true)) graph.searchPrices(conflict.prices);
     size_t changed=0,attempted=0,completed=0,visited=0;
     size_t regenerated=0,maxWorkers=1;
-    const int threads=graph.parameters().threads;
-    if(threads<1 || threads>128) throw std::invalid_argument("Invalid native worker count");
+    const int threads=integer(cfg.value("conflict_workers",Json(graph.parameters().threads)));
+    if(threads<1 || threads>graph.parameters().threads || threads>128) throw std::invalid_argument("Invalid native worker count");
     const bool regenerate=cfg.value("enable_group_regeneration",false);
     const auto regenerationLimit=cfg.value("group_regeneration_limit",32);
     if(regenerationLimit<0) throw std::invalid_argument("Invalid regeneration budget");
@@ -123,13 +159,15 @@ Json optimizeConflicts(IncumbentSolution& solution) {
                     };
                     const auto size=std::min<size_t>(threads,ids.size());
                     maxWorkers=std::max(maxWorkers,size);
+                    auto* parentProfile=Profile::current();
                     if(size==1) {
                         for(size_t i=0;i<ids.size();++i) calculate(i);
                     } else {
                         std::vector<std::future<void>> workers;
                         for(size_t worker=0;worker<size;++worker)
                             workers.push_back(std::async(std::launch::async,[&,worker]() {
-                                for(size_t i=worker;i<ids.size();i+=size) calculate(i);
+                                for(size_t i=worker;i<ids.size();i+=size)
+                                    Profile::worker(parentProfile,ids[i],NetMethod::Pattern,[&]{calculate(i);});
                             }));
                         for(auto& worker:workers) worker.get();
                     }
@@ -150,7 +188,10 @@ Json optimizeConflicts(IncumbentSolution& solution) {
                     }
                 }
                 Deadline subproblem(std::min(seconds,0.1));
-                selected=selectLocal(graph,ids,choices,subproblem,cfg.value("prefer_hbt_nonincrease",false));
+                size_t outside=solution.hbtTotal;
+                for(int id:ids) outside-=solution.current[id].summary->hbtSites().size();
+                const size_t room=solution.budget>outside?solution.budget-outside:0;
+                selected=selectLocal(graph,ids,choices,subproblem,solution.protect,room);
                 for(;applied<ids.size();++applied)
                     graph.commitPrepared(ids[applied],choices[ids[applied]][selected.selection[applied]]);
             } catch(...) {
@@ -161,6 +202,7 @@ Json optimizeConflicts(IncumbentSolution& solution) {
             for(size_t i=0;i<ids.size();++i) if(auto index=selected.selection[i]) {
                 auto& old=solution.current[ids[i]];
                 std::swap(old.route,old.alternatives[index-1]);
+                solution.hbtTotal=solution.after(old.summary,choices[ids[i]][index]);
                 old.summary=choices[ids[i]][index];
                 ++changed;
                 ++old.version;
@@ -177,9 +219,17 @@ Json optimizeConflicts(IncumbentSolution& solution) {
 }
 }
 
-IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>& stages,Json& report) {
+IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>& stages,Json& report,const std::string& outputDirectory) {
     const auto& cfg=graph.model.config;
     IncumbentSolution incumbent(graph);
+    const bool fromCheckpoint=cfg.count("load_maze_checkpoint");
+    std::vector<std::pair<double,int>> frozenOrder;
+    if(fromCheckpoint) {
+        if(stages!=std::vector<int>{3}) throw std::invalid_argument("Maze replay requires stages=[3]");
+        frozenOrder=loadMazeCheckpoint(incumbent,cfg.at("load_maze_checkpoint").get<std::string>());
+    }
+    const int checks=integer(cfg.value("maze_trial_checks",Json(0))),taskLimit=integer(cfg.value("maze_trial_tasks",Json(0)));
+    if(checks<0 || taskLimit<0 || (!fromCheckpoint && (checks || taskLimit))) throw std::invalid_argument("Invalid fixed workload");
     const int stride=cfg.value("sparse_stride",4);
     const double seedSeconds=cfg.value("seed_seconds",1200.);
     const double stageSeconds=cfg.value("stage_seconds",15.);
@@ -187,6 +237,7 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
     const auto selectedOrder=cfg.value("seed_order",std::string("local_first"));
     const auto order=initialOrder(graph,selectedOrder);
     report["algorithm"]={{"routing_mode","fast"},{"seed_order",selectedOrder},{"net_seconds",netSeconds}};
+    report["algorithm"]["optimization_mode"]=incumbent.mode;
     report["bound_scope"]="local_candidate_updates";
     report["unrestricted_optimality_gap"]=nullptr;
     for(int stage:stages) {
@@ -194,7 +245,10 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
         const auto start=Clock::now();
         size_t attempted=0,completed=0,accepted=0,restored=0,timedOut=0,candidateCount=0;
         bool stageLimit=false;
-        Json conflict=nullptr;
+        Json conflict=nullptr,parallelMaze=nullptr;
+        uint64_t serialExpansions=0,serialRefineTimeouts=0;
+        double serialSearch=0;
+        std::map<std::string,TopologyStats> topologyStats;
         if(stage==1) {
             Measured seed(Timing::Seed);
             Deadline budget(seedSeconds);
@@ -208,6 +262,7 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                     if(candidates.empty()) {
                         Profile::retry();
                         MeasuredNet maze(id,NetMethod::Maze);
+                        Measured fallback(Timing::SeedMaze);
                         candidates=SparseMaze(graph,id,budget).seed(stride,true);
                     }
                     ++completed;
@@ -237,7 +292,8 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                 graph.captureCongestion();
             }
             std::vector<std::pair<double,int>> priority;
-            for(int id:order) {
+            if(fromCheckpoint) priority=frozenOrder;
+            else for(int id:order) {
                 const auto& current=incumbent.current[id];
                 const auto pins=graph.terminals(id).size();
                 if(!current.summary) {
@@ -247,6 +303,10 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                 const bool cross=crosses(graph.model.nets[id]);
                 const double pressure=wirePressure(graph,*current.summary);
                 const bool hasAlternative=!current.alternatives.empty();
+                if(incumbent.excess(incumbent.hbtTotal) && !current.summary->hbtSites().empty()) {
+                    priority.emplace_back(-1000.-current.summary->hbtSites().size(),id);
+                    continue;
+                }
                 if(stage==2 && (cross || pressure>=0.85 || hasAlternative)) {
                     const double fastNet=pins<=8?8.:0.;
                     priority.emplace_back(-(10*pressure+std::min<size_t>(8,current.summary->hbtSites().size())+hasAlternative+fastNet),id);
@@ -256,8 +316,40 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                 }
             }
             std::sort(priority.begin(),priority.end());
+            if(stage==3 && cfg.value("save_maze_checkpoint",false))
+                saveMazeCheckpoint(incumbent,priority,outputDirectory+"/stage3.checkpoint");
+            if(taskLimit && priority.size()>size_t(taskLimit)) priority.resize(taskLimit);
+            if(stage==3 && cfg.count("maze_work_study"))
+                report["maze_work_study"]=measureMazeSearch(incumbent,priority,stride);
             Deadline budget(stageSeconds);
-            try {
+            if(stage==3 && cfg.value("enable_failure_driven_repair",false)) {
+                Deadline repair(budget,stageSeconds*0.25);
+                report["failure_repair"]=repairFailedNets(incumbent,priority,repair,netSeconds,stride);
+            }
+            const bool parallel=stage==3 && cfg.value("enable_parallel_maze",false);
+            int workers=graph.parameters().threads;
+            bool serialMemory=false;
+            if(parallel && cfg.value("enable_maze_memory_budget",false)) {
+                const auto reserve=integer(cfg.value("maze_worker_reserve_kb",Json(16384)));
+                const double fraction=cfg.value("maze_memory_fraction",0.18);
+                if(reserve<=0 || !(fraction>0 && fraction<=1.)) throw std::invalid_argument("Invalid maze worker memory budget");
+                rusage usage{};
+                if(getrusage(RUSAGE_SELF,&usage)!=0) throw std::runtime_error("Cannot measure route memory");
+                workers=std::max(1,std::min(workers,int(fraction*usage.ru_maxrss/reserve)));
+                serialMemory=workers==1;
+                report["maze_memory_policy"]={{"rss_before_stage3_kb",usage.ru_maxrss},{"worker_reserve_kb",reserve},
+                    {"fraction",fraction},{"worker_limit",workers},{"serial_fallback",serialMemory}};
+            }
+            if(parallel && !serialMemory) {
+                parallelMaze=routeMazeBatches(incumbent,priority,budget,stride,netSeconds,workers);
+                attempted=parallelMaze.at("maze_tasks").get<size_t>();
+                accepted=parallelMaze.at("accepted").get<size_t>();
+                completed=parallelMaze.at("completed").get<size_t>();
+                restored=parallelMaze.at("restored").get<size_t>();
+                candidateCount=parallelMaze.at("candidates").get<size_t>();
+                timedOut=parallelMaze.at("maze_search_timeouts").get<size_t>();
+                stageLimit=budget.expired();
+            } else try {
                 for(const auto& item:priority) {
                     budget.check();
                     const int id=item.second;
@@ -271,7 +363,18 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                         Measured generation(Timing::Candidates);
                         Routes candidates;
                         if(stage==2) candidates.swap(old.alternatives);
-                        Deadline one(netSeconds);
+                        Deadline one(budget,netSeconds);
+                        if(stage==3 && checks) one.limitChecks(checks);
+                        const size_t topologyBegin=candidates.size();
+                        std::vector<std::string> operators;
+                        if(stage==2 && cfg.value("enable_topology_refinement",false) && old.summary &&
+                           (old.summary->hbtSites().size() || old.failures || wirePressure(graph,*old.summary)>=0.85)) {
+                            const double fraction=cfg.value("topology_time_fraction",0.25);
+                            if(!(fraction>0 && fraction<=1)) throw std::invalid_argument("Invalid topology_time_fraction");
+                            Deadline local(one,netSeconds*fraction);
+                            auto changed=refineTopology(graph,id,old.route,local,topologyStats);
+                            for(auto& move:changed) {operators.push_back(move.operation);candidates.push_back(std::move(move.route));}
+                        }
                         try {
                             Routes newRoutes;
                             if(stage==2) {
@@ -281,26 +384,49 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
                                     if(crosses(graph.model.nets[id])) newRoutes=pattern.enumerateFast(false,old.pattern);
                                     if(newRoutes.empty()) newRoutes=pattern.enumerateFast(true,old.pattern);
                                 }
-                            } else newRoutes=SparseMaze(graph,id,one).candidates(stride,true);
+                            } else {
+                                Measured maze(Timing::Stage3Maze);
+                                MazeEffort effort;
+                                const auto begin=Clock::now();
+                                try {newRoutes=SparseMaze(graph,id,one,nullptr,&effort).candidates(stride,true);}
+                                catch(const SearchTimeout&) {
+                                    serialExpansions+=effort.expanded;
+                                    serialSearch+=std::chrono::duration<double>(Clock::now()-begin).count();
+                                    throw;
+                                }
+                                serialExpansions+=effort.expanded;serialRefineTimeouts+=effort.refineTimeout;
+                                serialSearch+=std::chrono::duration<double>(Clock::now()-begin).count();
+                            }
                             candidates.insert(candidates.end(),std::make_move_iterator(newRoutes.begin()),
                                               std::make_move_iterator(newRoutes.end()));
                             ++completed;
                         } catch(const SearchTimeout&) {
+                            if(stage==3) Profile::count(Event::MazeTimeouts);
                             ++timedOut;
                             ++old.failures;
                         }
                         candidateCount+=candidates.size();
                         size_t best=candidates.size();
                         PreparedRoute winner;
-                        double cost=old.summary?old.summary->cost():std::numeric_limits<double>::infinity();
                         for(size_t i=0;i<candidates.size();++i) {
                             auto summary=graph.prepareRoute(id,candidates[i]);
-                            if(protectsSites(graph,old.summary,summary) &&
-                               summary->cost()+1e-9<cost && graph.available(*summary)) {
-                                cost=summary->cost();winner=std::move(summary);best=i;
+                            if(incumbent.improves(old.summary,summary,winner?winner:old.summary) && graph.available(*summary)) {
+                                winner=std::move(summary);best=i;
+                            } else if(i>=topologyBegin && i-topologyBegin<operators.size()) {
+                                auto& stat=topologyStats[operators[i-topologyBegin]];
+                                if(incumbent.excess(incumbent.after(old.summary,summary))>incumbent.excess(incumbent.hbtTotal))
+                                    ++stat.budget;
+                                else ++stat.cost;
                             }
                         }
                         if(winner) {
+                            if(best>=topologyBegin && best-topologyBegin<operators.size()) {
+                                auto& stat=topologyStats[operators[best-topologyBegin]];
+                                ++stat.accepted;stat.deltaCost+=winner->cost()-old.summary->cost();
+                                stat.deltaWire+=winner->wirelength()-old.summary->wirelength();
+                                stat.deltaVia+=double(winner->vias())-old.summary->vias();
+                                stat.deltaHbt+=double(winner->hbtSites().size())-old.summary->hbtSites().size();
+                            }
                             incumbent.publish(id,std::move(candidates[best]),std::move(winner));
                             ++accepted;
                             old.failures=0;
@@ -330,11 +456,20 @@ IncrementalResult routeIncrementally(RoutingGraph& graph,const std::vector<int>&
         result["lower_bound"]=nullptr;
         result["gap"]=nullptr;
         result["seconds"]=std::chrono::duration<double>(Clock::now()-start).count();
+        if(!parallelMaze.is_null()) result["parallel_maze"]=std::move(parallelMaze);
+        else if(stage==3) result["serial_maze"]={{"astar_expanded_nodes",serialExpansions},
+            {"maze_refinement_timeouts",serialRefineTimeouts},{"maze_search_wall_seconds",serialSearch}};
+        for(const auto& s:topologyStats) result["topology_refinement"][s.first]=s.second.report();
         result["local_optimizer"]=std::move(conflict);
         report["stages"].push_back(result);
         std::cout<<"NATIVE_STAGE "<<result.dump()<<std::endl;
     }
     IncrementalResult result;
+    if(incumbent.mode=="budgeted") {
+        report["hbt_budget"]=incumbent.budget;
+        report["hbt_budget_excess"]=incumbent.excess(incumbent.hbtTotal);
+        report["hbt_budget_used"]=incumbent.hbtTotal;
+    }
     for(size_t id=0;id<incumbent.current.size();++id)
         if(!incumbent.current[id].summary) result.unrouted.push_back(id);
     if(result.unrouted.empty()) {

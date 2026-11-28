@@ -17,5 +17,5 @@ struct LocalResult {
 };
 // 分量内部尚未提交，分量外部资源仍在原图中占用。返回时资源账本恢复为入口状态。
 LocalResult selectLocal(RoutingGraph&,const std::vector<int>&,const std::vector<std::vector<PreparedRoute>>&,
-                        const Deadline&,bool protectHbt=false);
+                        const Deadline&,bool protectHbt=false,size_t hbtRoom=std::numeric_limits<size_t>::max());
 }

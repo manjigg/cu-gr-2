@@ -7,11 +7,13 @@ namespace {
 const char* timings[]={
     "total","input","initialization","seed","local_seed","cross_die_seed","flute","pattern_dp",
     "hbt_search","branch_repair","sparse_maze","available","resources","cost","capacity","step_cost",
-    "validate","commit","release","stage_1","stage_2","stage_3","candidate_generation","master_solver","guide_output"
+    "validate","commit","release","stage_1","stage_2","stage_3","candidate_generation","master_solver","guide_output",
+    "stage_1_maze","stage_3_maze","maze_refinement","conflict_optimizer"
 };
 const char* counters[]={
     "local_paths_calls","hbt_sites_visited","dp_labels_generated","dp_label_merges","dp_labels_pruned",
-    "astar_expanded_nodes","master_search_nodes"
+    "astar_expanded_nodes","master_search_nodes","maze_retries","maze_failed_tasks","maze_search_timeouts",
+    "maze_refinement_timeouts","hbt_rejections_occupied","hbt_rejections_spacing"
 };
 const char* methods[]={"seed","pattern","detour","maze"};
 static_assert(sizeof(timings)/sizeof(*timings)==static_cast<unsigned>(Timing::Count),"Timing names");
@@ -40,10 +42,44 @@ void Profile::count(Event event,uint64_t amount) {
 void Profile::labels(size_t live) {
     if(auto* p=current()) p->peakLabels=std::max(p->peakLabels,live);
 }
+#ifdef CUGR_DP_MEMORY_PROFILE
+void Profile::changeLabelBytes(size_t previous,size_t replacement) noexcept {
+    labelBytes=labelBytes-previous+replacement;
+    peakLabelBytes=std::max(peakLabelBytes,labelBytes);
+}
+#endif
 void Profile::retry() {
-    if(auto* p=current()) if(p->currentNet>=0) ++p->nets[p->currentNet].retries;
+    if(auto* p=current()) if(p->currentNet>=0) ++p->netTiming(p->currentNet).retries;
 }
 void Profile::prepareNets(size_t count) {nets.resize(count);}
+
+void Profile::worker(Profile* parent,int net,NetMethod method,const std::function<void()>& task) {
+    if(!parent) {task();return;}
+    if(current()==parent) {MeasuredNet measured(net,method);task();return;}
+    Profile local;
+    local.workerLocal=true;
+    std::exception_ptr failure;
+    try {MeasuredNet measured(net,method);task();}
+    catch(...) {failure=std::current_exception();}
+    {
+        std::lock_guard<std::mutex> lock(parent->mergeMutex);
+        for(size_t i=0;i<local.times.size();++i) {
+            auto& total=parent->workerTimes[i];
+            total.calls+=local.times[i].calls;
+            total.inclusive+=local.times[i].inclusive;
+            total.exclusive+=local.times[i].exclusive;
+        }
+        for(size_t i=0;i<local.events.size();++i) parent->workerEvents[i]+=local.events[i];
+        auto& record=parent->workerNets[net];
+        record.retries+=local.workerNet.retries;
+        for(size_t i=0;i<record.time.size();++i) record.time[i]+=local.workerNet.time[i];
+        parent->workerPeakLabels=std::max(parent->workerPeakLabels,local.peakLabels);
+#ifdef CUGR_DP_MEMORY_PROFILE
+        parent->workerPeakLabelBytes=std::max(parent->workerPeakLabelBytes,local.peakLabelBytes);
+#endif
+    }
+    if(failure) std::rethrow_exception(failure);
+}
 
 Measured::Measured(Timing t):kind(t),profile(Profile::current()) {
     if(!profile) return;
@@ -72,13 +108,18 @@ MeasuredNet::MeasuredNet(int id,NetMethod m):profile(Profile::current()),net(id)
 MeasuredNet::~MeasuredNet() {
     if(!profile) return;
     const auto elapsed=Profile::Clock::now()-start;
-    profile->nets[net].time[static_cast<int>(method)]+=elapsed-children;
+    profile->netTiming(net).time[static_cast<int>(method)]+=elapsed-children;
     if(parent) parent->children+=elapsed;
     profile->netFrame=parent;
     profile->currentNet=previous;
 }
 
 void Profile::describeNets(const MultiDieDesign& model,const RoutingGraph& graph,const std::vector<Route>& routes) {
+    for(const auto& item:workerNets) {
+        auto& record=nets.at(item.first);
+        record.retries+=item.second.retries;
+        for(size_t i=0;i<record.time.size();++i) record.time[i]+=item.second.time[i];
+    }
     std::vector<int> ids;
     for(const auto& net:model.nets) ids.push_back(net.id);
     auto total=[&](int net) {return std::accumulate(nets[net].time.begin(),nets[net].time.end(),Clock::duration{});};
@@ -114,13 +155,20 @@ void Profile::write(const std::string& dir) const {
     profile["total_scope"]="before_native_input_through_routing_statistics";
     profile["label_peak_scope"]="largest partial DP bucket";
     for(int i=0;i<static_cast<int>(Timing::Count);++i) {
+        const auto& w=workerTimes[i];
+        profile["worker_modules"][timings[i]]={{"calls",w.calls},{"inclusive_elapsed_seconds",seconds(w.inclusive)},
+                                               {"exclusive_elapsed_seconds",seconds(w.exclusive)}};
         const auto& t=times[i];
         profile["modules"][timings[i]]={{"calls",t.calls},{"inclusive_seconds",seconds(t.inclusive)},
                                           {"exclusive_seconds",seconds(t.exclusive)}};
     }
     for(int i=0;i<static_cast<int>(Event::Count);++i)
-        profile["counters"][counters[i]]=events[i];
-    profile["counters"]["dp_peak_labels_in_bucket"]=peakLabels;
+        profile["counters"][counters[i]]=events[i]+workerEvents[i];
+    profile["counters"]["dp_peak_labels_in_bucket"]=std::max(peakLabels,workerPeakLabels);
+#ifdef CUGR_DP_MEMORY_PROFILE
+    profile["counters"]["dp_peak_live_label_payload_bytes_per_thread"]=std::max(peakLabelBytes,workerPeakLabelBytes);
+    profile["dp_label_memory_scope"]="Live fast DP label objects, their reserved edge and HBT arrays and demand key/value payload. Excludes allocator overhead, unused bucket slots and transient path buffers. Maximum of thread-local peaks.";
+#endif
     auto json=outputFile(dir+"/profile.json");
     json<<profile.dump(2)<<'\n';
     json.close();

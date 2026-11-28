@@ -4,9 +4,14 @@
 
 namespace native3d {
 int integer(const Json& j) {
-    if (!j.is_number_integer() || j < INT_MIN || j > INT_MAX)
-        throw std::invalid_argument("Expected signed 32-bit integer: " + j.dump());
-    return j.get<int>();
+    if(j.is_number_unsigned()) {
+        auto value=j.get<uint64_t>();
+        if(value<=INT_MAX) return static_cast<int>(value);
+    } else if(j.is_number_integer()) {
+        auto value=j.get<int64_t>();
+        if(value>=INT_MIN && value<=INT_MAX) return static_cast<int>(value);
+    }
+    throw std::invalid_argument("Expected signed 32-bit integer: " + j.dump());
 }
 XY pairOf(const Json& j) {
     if (!j.is_array() || j.size()!=2) throw std::invalid_argument("Expected coordinate pair");

@@ -139,6 +139,24 @@ def check(config, directory):
     actual={(c['net_id'],h['id'],c['die'],c['name'],h['layer'],*h['xy']) for c in components for h in c['landings']}
     if actual!=expected_landings:
         raise ValueError('Component endpoint mismatch')
+    if model.get('enable_hbt_footprint'):
+        rules = {tuple(r['layers']):r['reservations'] for r in array['transition_footprints']['rules']}
+        for c in components:
+            d = c['die']
+            for h in c['landings']:
+                points = endpoints[h['id']]
+                pair = tuple(geometries[i][0][points[i][1]][0] for i in (0,1))
+                _,layer,x,y = points[d]
+                expected = defaultdict(float)
+                for r in rules[pair]:
+                    if r['die'] == d:
+                        dx,dy = r['offset']
+                        expected[r['kind'],layer+r['layer_offset'],x+dx,y+dy] += r['demand']
+                entries = h['additional_reservations']
+                actual = {(r['kind'],r['layer'],r['x'],r['y']):r['demand'] for r in entries}
+                if len(actual)!=len(entries) or expected.keys()!=actual.keys() or any(
+                        not math.isclose(value,actual[key]) for key,value in expected.items()):
+                    raise ValueError('Additional HBT landing reservation mismatch')
     real_pins=0
     for d,side in enumerate(['top','bottom']):
         own=[c for c in components if c['die']==d]
@@ -160,6 +178,10 @@ def check(config, directory):
     metrics=stats['metrics']
     if vias!=metrics['via_count'] or len(hbts)!=metrics['used_hbt'] or not math.isclose(sum(um),metrics['wirelength_um']):
         raise ValueError('Reported totals do not match routed edges')
+    if model.get('optimization_mode')=='budgeted':
+        excess=max(0,len(hbts)-model['hbt_budget'])
+        if excess or stats.get('hbt_budget_excess')!=excess or stats.get('budget_status')!='FEASIBLE':
+            raise ValueError('Routed HBT assignment exceeds budget or disagrees with budget report')
     return dict(original_pins=real_pins, via_count=vias, hbt_count=len(hbts),
                 wirelength_um=sum(um), checked_components=len(components))
 

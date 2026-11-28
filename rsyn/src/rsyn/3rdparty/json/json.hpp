@@ -8473,7 +8473,8 @@ basic_json_parser_63:
             }
 
             const auto offset_start = m_start - m_content;
-            const auto offset_marker = m_marker - m_start;
+            const bool has_marker = m_marker != nullptr;
+            const auto offset_marker = has_marker ? m_marker - m_start : 0;
             const auto offset_cursor = m_cursor - m_start;
 
             m_buffer.erase(0, static_cast<size_t>(offset_start));
@@ -8485,7 +8486,7 @@ basic_json_parser_63:
             m_content = reinterpret_cast<const lexer_char_t*>(m_buffer.c_str());
             assert(m_content != nullptr);
             m_start  = m_content;
-            m_marker = m_start + offset_marker;
+            m_marker = has_marker ? m_start + offset_marker : nullptr;
             m_cursor = m_start + offset_cursor;
             m_limit  = m_start + m_buffer.size() - 1;
         }

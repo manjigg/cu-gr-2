@@ -3,6 +3,15 @@
 #include <queue>
 
 namespace native3d {
+void MazeEffort::observe(const std::vector<Resource>& resources) {
+    // Misra–Gries 有界热点计数仅用于选择相关线网，不能证明不可布通。
+    for(auto id:resources) {
+        if(blocked.count(id) || blocked.size()<16) {++blocked[id];continue;}
+        for(auto it=blocked.begin();it!=blocked.end();) {
+            if(--it->second==0) it=blocked.erase(it);else ++it;
+        }
+    }
+}
 namespace {
 class MazeWorkspace {
     struct Label {
@@ -104,10 +113,11 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) c
         if(targets.empty()) break;
         bool accessible=false;
         for(const auto& p:targets) {
-            for(const auto& e:graph.neighbors(p,net))
-                if((cross||allowDieDetour||e.type!=GREdgeType::HBT) && graph.available(net,{e})) {
-                    accessible=true;break;
-                }
+            for(const auto& e:graph.neighbors(p,net)) {
+                if(!cross && !allowDieDetour && e.type==GREdgeType::HBT) continue;
+                if(graph.available(net,{e},view)) {accessible=true;break;}
+                if(effort && effort->recordBlockers) effort->observe(graph.blockingResources(net,e,view));
+            }
             if(accessible) break;
         }
         if(!accessible) return false;
@@ -163,14 +173,15 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) c
                     combined.insert(path.begin(),path.end());
                 }
                 // 单条边合法不保证整段路径的 Via 金属需求可容纳。
-                const bool valid=cached?graph.extendPath(net,path,tree.edges,treeDemand,chosenSites):
-                                        graph.available(net,combined);
+                const bool valid=cached?graph.extendPath(net,path,tree.edges,treeDemand,chosenSites,view):
+                                        graph.available(net,combined,view);
                 if(!valid) {
+                    Profile::count(Event::MazeRetries);
                     Profile::retry();
                     Edges trial=tree.edges;
                     for(const auto& e:path) {
                         trial.insert(e);
-                        if(!graph.available(net,trial)) {
+                        if(!graph.available(net,trial,view)) {
                             if(!excluded.insert(e).second) throw std::logic_error("Repeated excluded branch");
                             restart=true;break;
                         }
@@ -191,6 +202,7 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) c
                 if(!cached) tree.edges.swap(combined);
                 reached=true;break;
             }
+            if(effort) ++effort->expanded;
             Profile::count(Event::MazeExpansions);
             for(const auto& e:graph.neighbors(u,net)) {
                 if(e.type==GREdgeType::HBT && !cross && !allowDieDetour) continue;
@@ -201,8 +213,11 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) c
                     (!onLine(u.dieIdx,0,u.x)||!onLine(u.dieIdx,1,u.y))) continue;
                 auto v=(u==e.a?e.b:e.a);
                 if(connected.count(v) || excluded.count(e) || !inside(v)) continue;
-                double step=graph.stepCost(net,e);
-                if(!std::isfinite(step)) continue;
+                double step=graph.stepCost(net,e,view);
+                if(!std::isfinite(step)) {
+                    if(effort && effort->recordBlockers) effort->observe(graph.blockingResources(net,e,view));
+                    continue;
+                }
                 double next=from+step;
                 const auto id=graph.nodeId(v);
                 if(workspace.distance(id)<=next) continue;
@@ -213,7 +228,7 @@ bool SparseMaze::grow(Route& tree,int stride,bool allowDieDetour,bool bounded) c
         if(restart) continue;
         if(!reached) return false;
     }
-    try {graph.validate(net,tree);} catch(const std::invalid_argument&) {return false;}
+    try {graph.validate(net,tree,view);} catch(const std::invalid_argument&) {return false;}
     return true;
 }
 Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
@@ -230,18 +245,21 @@ Routes SparseMaze::seed(int stride,bool allowDieDetour) const {
             tree={source,{}};
             if(grow(tree,stride,allowDieDetour,false)) return {std::move(tree)};
         }
-        if(stride==1) return {};
+        if(stride==1) {Profile::count(Event::MazeFailed);return {};}
         Profile::retry();
+        Profile::count(Event::MazeRetries);
         stride=std::max(1,stride/2);
     }
 }
 Routes SparseMaze::candidates(int stride,bool allowDieDetour) const {
     auto found=seed(stride,allowDieDetour);
     if(found.empty()) return {};
-    try {return PatternSearch(graph,net,time).refineMaze(found.front());}
+    try {Measured refine(Timing::MazeRefine);return PatternSearch(graph,net,time).refineMaze(found.front(),view);}
     catch(const SearchTimeout&) {
         if(graph.model.config.value("routing_mode",std::string("exact"))=="exact") throw;
         Profile::retry();
+        if(effort) effort->refineTimeout=true;
+        Profile::count(Event::RefineTimeouts);
         return found;
     }
 }

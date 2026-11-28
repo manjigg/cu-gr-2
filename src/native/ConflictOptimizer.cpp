@@ -79,7 +79,7 @@ ConflictGroups buildConflictGroups(const RoutingGraph& graph,const std::vector<s
 }
 
 LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
-                        const std::vector<std::vector<PreparedRoute>>& choices,const Deadline& deadline,bool protectHbt) {
+                        const std::vector<std::vector<PreparedRoute>>& choices,const Deadline& deadline,bool protectHbt,size_t hbtRoom) {
     Measured measured(Timing::Master);
     LocalResult result;
     result.selection.assign(ids.size(),0);
@@ -96,10 +96,14 @@ LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
             [](const PreparedRoute& a,const PreparedRoute& b){return a->cost()<b->cost();});
         suffix[i]=std::nextafter(suffix[i+1]+(*cheap)->cost(),0.);
     }
+    auto excess=[&](size_t h){return h>hbtRoom?h-hbtRoom:0;};
+    auto bestExcess=excess(hbtBudget);
     std::function<void(size_t,double,size_t)> search=[&](size_t i,double value,size_t hbt) {
         deadline.check();
         if(i==ids.size()) {
-            if(value+1e-9<best) {best=value;result.selection=chosen;}
+            if(excess(hbt)<bestExcess || (excess(hbt)==bestExcess && value+1e-9<best)) {
+                bestExcess=excess(hbt);best=value;result.selection=chosen;
+            }
             return;
         }
         const auto id=ids[i];
@@ -110,7 +114,8 @@ LocalResult selectLocal(RoutingGraph& graph,const std::vector<int>& ids,
             const double next=value+candidate->cost();
             const auto nextHbt=hbt+candidate->hbtSites().size();
             if(protectHbt && nextHbt>hbtBudget) continue;
-            if(next+suffix[i+1]>best+1e-9 || !graph.available(*candidate)) continue;
+            if(excess(nextHbt)>bestExcess || (excess(nextHbt)==bestExcess && next+suffix[i+1]>best+1e-9)
+               || !graph.available(*candidate)) continue;
             graph.commitPrepared(id,candidate);
             chosen[i]=k;
             try {search(i+1,next,nextHbt);}

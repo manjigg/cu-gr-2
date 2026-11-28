@@ -65,10 +65,15 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
     const auto stages=requestedStages(model.config);
     const auto method=model.config.value("routing_mode",std::string("exact"));
     if(method!="exact" && method!="fast") throw std::invalid_argument("Unknown routing mode: "+method);
+    if(method=="exact" && (model.config.value("optimization_mode",std::string("baseline"))!="baseline" ||
+        model.config.count("hbt_budget"))) throw std::invalid_argument("Global HBT budget and joint updates require fast mode");
+    if(!model.config.value("enable_parallel_maze",false) &&
+       (model.config.value("enable_conflict_aware_batching",false) || model.config.value("enable_adaptive_parallelism",false)))
+        throw std::invalid_argument("Parallel maze scheduler requires enable_parallel_maze");
     std::vector<Route> incumbent;
     bool allFinished=true;
     if(method=="fast") {
-        auto optimized=routeIncrementally(graph,stages,report);
+        auto optimized=routeIncrementally(graph,stages,report,output);
         report["unrouted_net_ids"]=std::move(optimized.unrouted);
         incumbent.swap(optimized.routes);
     } else {
@@ -189,11 +194,16 @@ int GlobalRouter::route(native3d::MultiDieDesign& model,const std::string& outpu
     if(method=="fast") report["status"]=incumbent.empty()?"NO_FEASIBLE_FAST_ROUTE":"FEASIBLE_FAST";
     else report["status"]=incumbent.empty()?(allFinished?"INFEASIBLE_CANDIDATE_POOL":"NO_INCUMBENT_TIME_LIMIT"):
                        (allFinished?"OPTIMAL_CANDIDATE_POOL":"FEASIBLE_TIME_LIMIT");
+    const bool budgetMiss=report.value("hbt_budget_excess",0)>0;
+    if(method=="fast" && report.count("hbt_budget")) {
+        report["budget_status"]=incumbent.empty()?"UNROUTED":budgetMiss?"HEURISTIC_BUDGET_UNMET":"FEASIBLE";
+        if(!incumbent.empty() && budgetMiss) report["status"]="ROUTED_BUDGET_UNMET";
+    }
     report["routing_seconds"]=std::chrono::duration<double>(Clock::now()-begin).count();
     struct rusage usage{};
     if(getrusage(RUSAGE_SELF,&usage)==0) report["router_max_rss_kb"]=usage.ru_maxrss;
     std::ofstream os;
     os.exceptions(std::ios::badbit|std::ios::failbit);
     os.open(output+"/routing_statistics.json");os<<report.dump(2)<<'\n';os.close();
-    return incumbent.empty()?2:0;
+    return incumbent.empty() || budgetMiss?2:0;
 }

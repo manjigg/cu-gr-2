@@ -5,13 +5,27 @@
 #include "Profile.h"
 #include "gr/PatternRoute.h"
 #include <numeric>
+#include <utility>
 
 namespace native3d {
 Deadline::Deadline(double seconds) {
     if(!std::isfinite(seconds)||seconds<=0||seconds>31536000) throw std::invalid_argument("Invalid solver time limit");
     end=std::chrono::steady_clock::now()+std::chrono::milliseconds(static_cast<int64_t>(seconds*1000));
 }
-void Deadline::check() const { if(std::chrono::steady_clock::now()>=end) throw SearchTimeout(); }
+Deadline::Deadline(const Deadline& stage,double seconds,const std::atomic<bool>* cancel):Deadline(seconds) {
+    end=std::min(stage.end,end);
+    cancelled=cancel?cancel:stage.cancelled;
+}
+bool Deadline::expired() const {
+    return (cancelled && cancelled->load(std::memory_order_relaxed)) || std::chrono::steady_clock::now()>=end;
+}
+double Deadline::overrun() const {
+    return std::max(0.,std::chrono::duration<double>(std::chrono::steady_clock::now()-end).count());
+}
+void Deadline::check() const {
+    if(expired() || (workLimit && consumed>=workLimit)) throw SearchTimeout();
+    if(workLimit) ++consumed;
+}
 static void vias(Edges& edges,GRPoint& p,int to) {
     while(p.layerIdx!=to) {
         GRPoint q=p; q.layerIdx+=p.layerIdx<to?1:-1;
@@ -21,7 +35,7 @@ static void vias(Edges& edges,GRPoint& p,int to) {
 static Edges join(const Edges& a,const Edges& b) {
     Edges out=a;out.insert(b.begin(),b.end());return out;
 }
-std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b) const {
+std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b,const ResourceReadView* view) const {
     Profile::count(Event::LocalPaths);
     time.check();
     std::set<Edges> results;
@@ -33,7 +47,7 @@ std::set<Edges> PatternSearch::localPaths(GRPoint a,GRPoint b) const {
         segment=[&](GRPoint p,int k,const Edges& edges) {
             if(k==2) {
                 auto complete=edges; vias(complete,p,b.layerIdx);
-                if(g.available(net,complete)) results.insert(std::move(complete));
+                if(g.available(net,complete,view)) results.insert(std::move(complete));
                 return;
             }
             int axis=(first+k)%2;
@@ -179,7 +193,13 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
         const auto region=weightedMedianRegion({pa,pb},{g.l1Weight(a.dieIdx),g.l1Weight(b.dieIdx)});
         std::set<std::pair<int,int>> seen;
         double best=std::numeric_limits<double>::infinity();
-        for(size_t limit=raw;limit<=std::max<size_t>(32,raw);limit*=2) {
+        const bool progressive=g.model.config.value("enable_progressive_hbt_search",false);
+        size_t productiveSites=0;
+        // 多端树中的替代站可能有后续共享收益。渐进模式按可行站点的多样性扩窗，
+        // 不以 R-tree 几何近邻顺序证明组合布线问题的最优性。
+        const size_t initial=progressive?std::max(1,raw/2):raw;
+        for(size_t limit=initial;progressive || limit<=std::max<size_t>(32,raw);limit*=2) {
+            time.check();
             auto starts=cross?g.sitesNearRegion(region.low,region.high,limit):g.sitesNearRegion(pa,pa,limit);
             auto finishes=cross?std::vector<const Site*>{}:g.sitesNearRegion(pb,pb,limit);
             auto score=[&](const Site* site) {
@@ -217,16 +237,19 @@ std::set<Edges> PatternSearch::paths(GRPoint a,GRPoint b,bool detours,PathCache*
                 if(cross) {
                     if(!seen.emplace(site->id,-1).second) continue;
                     // 本地上界可用于单条独立分支，联合 DP 仍保留多个替代站。
-                    if(g.model.config.value("enable_hbt_pruning",true) && out.size()>=static_cast<size_t>(raw) &&
+                    if(!progressive && g.model.config.value("enable_hbt_pruning",true) && out.size()>=static_cast<size_t>(raw) &&
                        score(site).first>best+8.) continue;
+                    const auto previousSize=out.size();
                     for(const auto& h:site->transitions) connect(h,nullptr);
+                    productiveSites+=out.size()>previousSize;
                 } else for(const auto* end:finishes) {
                     if(end==site || !seen.emplace(site->id,end->id).second) continue;
                     Profile::count(Event::HbtSites);
                     for(const auto& h:site->transitions) for(const auto& second:end->transitions) connect(h,&second);
                 }
             }
-            if(std::isfinite(best) || starts.size()<limit) break;
+            if(starts.size()<limit || (std::isfinite(best) && (!progressive || !cross ||
+               productiveSites>=std::min<size_t>(4,raw)))) break;
         }
         return out;
     }
@@ -366,6 +389,8 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
     const auto& pins=g.terminals(net);
     const auto& cfg=g.model.config;
     const auto requested=cfg.value("beam_width",8);
+    const bool incremental=cfg.value("enable_incremental_dp",false);
+    const bool adaptive=cfg.value("enable_adaptive_beam",false);
     if(requested<1 || requested>128) throw std::invalid_argument("Invalid beam width");
     const size_t width=pins.size()>32?std::max(2,requested/2):requested;
     PathCache pathCache;
@@ -391,15 +416,56 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
     }
     if(!cache.topology || !cfg.value("enable_topology_cache",true)) cache.topology=projectTopology(g,net);
     const auto& topology=*cache.topology;
-    struct Label {
+    struct LabelData {
         // 已排序的单位边。合并使用线性并集，复用不可变标签，完整根才重建 Route。
         std::vector<Edge> edges;
         PathQuality quality;
+        std::unique_ptr<Demand> demand;
     };
+#ifdef CUGR_DP_MEMORY_PROFILE
+    // 诊断构建逐标签精确拥有计数。移动仅转移字节所有权，丢弃及超时按生命周期撤销。
+    // 统计逻辑 payload（数据载荷），分配器元数据、临时路径和容器闲置槽位另计。
+    struct Label : LabelData {
+        Profile* profile=Profile::current();
+        size_t charged=0;
+        Label() {measure();}
+        Label(const Label&)=delete;
+        Label& operator=(const Label&)=delete;
+        Label(Label&& other) noexcept:LabelData(std::move(other)),profile(other.profile),
+                                      charged(std::exchange(other.charged,0)) {}
+        Label& operator=(Label&& other) noexcept {
+            if(this!=&other) {
+                if(profile) profile->changeLabelBytes(charged,0);
+                LabelData::operator=(std::move(other));
+                profile=other.profile;
+                charged=std::exchange(other.charged,0);
+            }
+            return *this;
+        }
+        void measure() {
+            if(!profile) return;
+            const size_t bytes=sizeof(LabelData)+edges.capacity()*sizeof(Edge)
+                +quality.hbt.capacity()*sizeof(int)
+                +(demand?sizeof(Demand)+demand->size()*sizeof(Demand::value_type):0);
+            profile->changeLabelBytes(charged,bytes);
+            charged=bytes;
+        }
+        ~Label() {if(profile) profile->changeLabelBytes(charged,0);}
+    };
+#else
+    using Label=LabelData;
+#endif
     using Bucket=std::vector<Label>;
     using Table=std::map<GRPoint,Bucket>;
     auto keepDiverse=[&](Bucket& labels) {
-        if(labels.size()<=width) return;
+        size_t keep=width;
+        if(adaptive && !labels.empty()) {
+            std::set<std::vector<int>> signatures;
+            for(const auto& label:labels) signatures.insert(label.quality.hbt);
+            if(signatures.size()>width/2) keep=std::min<size_t>(128,2*width);
+            else if(signatures.size()==1 && pins.size()<=8) keep=std::max<size_t>(2,width/2);
+        }
+        if(labels.size()<=keep) return;
         auto less=[](const Label& a,const Label& b) {
             return std::tie(a.quality.cost,a.quality.wire,a.quality.vias,a.quality.hbt,a.edges)<
                    std::tie(b.quality.cost,b.quality.wire,b.quality.vias,b.quality.hbt,b.edges);
@@ -409,7 +475,7 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
         std::vector<bool> selected(count,false);
         Bucket kept;
         auto take=[&](size_t index) {
-            if(!selected[index] && kept.size()<width) {
+            if(!selected[index] && kept.size()<keep) {
                 selected[index]=true;
                 kept.push_back(std::move(labels[index]));
             }
@@ -426,9 +492,9 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
         best([](const Label& label){return label.quality.vias;});
         std::set<std::vector<int>> sites;
         for(const auto& label:kept) sites.insert(label.quality.hbt);
-        for(size_t i=0;i<count && kept.size()<width;++i)
+        for(size_t i=0;i<count && kept.size()<keep;++i)
             if(!selected[i] && sites.insert(labels[i].quality.hbt).second) take(i);
-        for(size_t i=0;i<count && kept.size()<width;++i) take(i);
+        for(size_t i=0;i<count && kept.size()<keep;++i) take(i);
         Profile::count(Event::LabelsPruned,count-kept.size());
         labels.swap(kept);
     };
@@ -451,14 +517,26 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
                         auto duplicate=std::any_of(next.begin(),next.end(),[&](const Label& old) {
                             return !(old.edges<combined.edges) && !(combined.edges<old.edges);
                         });
-                        if(duplicate || !g.evaluateCompact(net,combined.edges,combined.quality)) {
+                        bool feasible=false;
+                        if(!duplicate) {
+                            if(incremental) {
+                                static const Demand empty;
+                                combined.demand.reset(new Demand);
+                                feasible=g.evaluateIncrement(net,left.edges,left.demand?*left.demand:empty,
+                                                            combined.edges,*combined.demand,combined.quality);
+                            } else feasible=g.evaluateCompact(net,combined.edges,combined.quality);
+                        }
+#ifdef CUGR_DP_MEMORY_PROFILE
+                        combined.measure();
+#endif
+                        if(!feasible) {
                             Profile::count(Event::LabelsPruned);
                             continue;
                         }
                         next.push_back(std::move(combined));
                         Profile::count(Event::LabelsGenerated);
                         Profile::labels(next.size());
-                        if(next.size()>=2*width) keepDiverse(next);
+                        if(next.size()>=(adaptive?4:2)*width) keepDiverse(next);
                     }
                 }
             }
@@ -508,7 +586,7 @@ Routes PatternSearch::enumerateFast(bool detours,FastPatternCache& cache) const 
 }
 
 // 将迷宫树中的无分支同层线段送回模式路径 DP；物理 HBT 和真实端点作为锚点。
-Routes PatternSearch::refineMaze(const Route& tree) const {
+Routes PatternSearch::refineMaze(const Route& tree,const ResourceReadView* view) const {
     Measured measured(Timing::PatternDP);
     std::map<GRPoint,std::vector<Edge>> adj;
     std::set<GRPoint> anchors{tree.root};
@@ -529,11 +607,11 @@ Routes PatternSearch::refineMaze(const Route& tree) const {
             const Edge& e=visited.count(options.front())?options.back():options.front();
             visited.insert(e);end=end==e.a?e.b:e.a;
         }
-        const auto paths=localPaths(start,end);
+        const auto paths=localPaths(start,end,view);
         std::set<Edges> next;
         for(const auto& a:labels) for(const auto& p:paths) {
             time.check(); auto u=join(a,p);
-            if(g.available(net,u)) next.insert(std::move(u));
+            if(g.available(net,u,view)) next.insert(std::move(u));
         }
         labels.swap(next);
     }
@@ -541,7 +619,7 @@ Routes PatternSearch::refineMaze(const Route& tree) const {
     for(const auto& e:labels) {
         if(!(e<tree.edges) && !(tree.edges<e)) continue;
         Route r{tree.root,e};
-        try {g.validate(net,r);} catch(const std::invalid_argument&) {continue;}
+        try {g.validate(net,r,view);} catch(const std::invalid_argument&) {continue;}
         result.push_back(std::move(r));
     }
     return result;
